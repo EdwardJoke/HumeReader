@@ -695,6 +695,7 @@ class _SidebarTile extends StatelessWidget {
                 ),
               ),
               if (count != null && count! > 0) ...[
+                const Spacer(),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,

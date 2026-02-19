@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:epubx/epubx.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hume/models/book.dart';
+import 'package:hume/models/book_chapter.dart';
 import 'package:hume/models/reading_stats.dart';
 import 'package:hume/models/shelf.dart';
 import 'package:path_provider/path_provider.dart';
@@ -50,7 +52,7 @@ class BookService {
       final fileName = file.path.split('/').last;
       final extension = fileName.split('.').last.toLowerCase();
 
-      if (extension != 'txt') {
+      if (extension != 'txt' && extension != 'epub') {
         return null;
       }
 
@@ -61,13 +63,33 @@ class BookService {
       final newFile = File('${booksDir.path}/$newFileName');
       await file.copy(newFile.path);
 
+      String? bookTitle = title;
+      String? author;
+      Uint8List? coverImage;
+
+      if (extension == 'epub') {
+        final bytes = await file.readAsBytes();
+        final epubBook = await EpubReader.readBook(bytes);
+
+        bookTitle = epubBook.Title?.isNotEmpty == true
+            ? epubBook.Title!
+            : title;
+        author = epubBook.Author;
+
+        if (epubBook.CoverImage != null) {
+          coverImage = epubBook.CoverImage!.getBytes();
+        }
+      }
+
       final book = Book(
         id: _uuid.v4(),
-        title: title,
+        title: bookTitle,
+        author: author,
         filePath: newFile.path,
         format: extension,
         fileSize: fileSize,
         addedAt: DateTime.now(),
+        coverImage: coverImage,
       );
 
       await _saveBook(book);
@@ -128,10 +150,14 @@ class BookService {
     if (!await file.exists()) {
       throw Exception('Book file not found');
     }
+
+    if (book.format == 'epub') {
+      return getEpubFullContent(book);
+    }
+
     try {
       return await file.readAsString();
     } catch (e) {
-      // Check if this is a permission error (macOS sandbox)
       if (Platform.isMacOS && _isPermissionError(e)) {
         throw FilePermissionException(
           'File access permission denied. Please grant file access in System Settings > Privacy & Security > Files and Folders.',
@@ -140,6 +166,82 @@ class BookService {
       }
       rethrow;
     }
+  }
+
+  Future<String> getEpubFullContent(Book book) async {
+    final chapters = await getEpubChapters(book);
+    return chapters.map((c) => c.content).join('\n\n');
+  }
+
+  Future<List<BookChapter>> getEpubChapters(Book book) async {
+    final file = File(book.filePath);
+    if (!await file.exists()) {
+      throw Exception('Book file not found');
+    }
+
+    final bytes = await file.readAsBytes();
+    final epubBook = await EpubReader.readBook(bytes);
+
+    final chapters = <BookChapter>[];
+    int index = 0;
+
+    void collectChapters(List<EpubChapter> epubChapters) {
+      for (final chapter in epubChapters) {
+        final title = chapter.Title ?? 'Chapter ${index + 1}';
+        final content = chapter.HtmlContent ?? '';
+
+        chapters.add(
+          BookChapter(title: title, content: _stripHtml(content), index: index),
+        );
+        index++;
+
+        if (chapter.SubChapters != null && chapter.SubChapters!.isNotEmpty) {
+          collectChapters(chapter.SubChapters!);
+        }
+      }
+    }
+
+    if (epubBook.Chapters != null && epubBook.Chapters!.isNotEmpty) {
+      collectChapters(epubBook.Chapters!);
+    } else {
+      final allContent = StringBuffer();
+      epubBook.Content?.Html?.forEach((key, value) {
+        allContent.write(_stripHtml(value.Content ?? ''));
+        allContent.write('\n\n');
+      });
+      if (allContent.isNotEmpty) {
+        chapters.add(
+          BookChapter(
+            title: book.title,
+            content: allContent.toString().trim(),
+            index: 0,
+          ),
+        );
+      }
+    }
+
+    return chapters;
+  }
+
+  String _stripHtml(String html) {
+    return html
+        .replaceAll(
+          RegExp(r'<script[^>]*>[\s\S]*?</script>', caseSensitive: false),
+          '',
+        )
+        .replaceAll(
+          RegExp(r'<style[^>]*>[\s\S]*?</style>', caseSensitive: false),
+          '',
+        )
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   /// Checks if an error is related to file permission issues.

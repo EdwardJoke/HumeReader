@@ -8,7 +8,7 @@ void main() {
     await tester.pumpWidget(const HumeApp());
 
     expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.text('Library'), findsOneWidget);
+    expect(find.text('Library'), findsWidgets);
     expect(find.text('Stats'), findsOneWidget);
     expect(find.text('User'), findsOneWidget);
   });

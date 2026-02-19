@@ -52,7 +52,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['txt'],
+        allowedExtensions: ['txt', 'epub'],
       );
 
       if (result != null && result.files.single.path != null) {

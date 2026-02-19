@@ -294,16 +294,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Widget _buildSidebarHeader() {
     final colorScheme = Theme.of(context).colorScheme;
+    final isExtended = _sidebarExtended;
 
     return SizedBox(
       height: 64,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // Determine layout based on actual available width, not state
-          final isExtended = constraints.maxWidth > 100;
-
-          if (isExtended) {
-            return Padding(
+      child: isExtended
+          ? Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -333,26 +329,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 ],
               ),
-            );
-          }
-
-          // Collapsed state
-          return Center(
-            child: IconButton(
-              onPressed: () => setState(() {
-                _sidebarExtended = !_sidebarExtended;
-              }),
-              icon: const Icon(Icons.chevron_right_rounded, size: 22),
-              tooltip: 'Expand',
-              style: IconButton.styleFrom(
-                foregroundColor: colorScheme.onSurfaceVariant,
-                minimumSize: const Size(36, 36),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            )
+          : Center(
+              child: IconButton(
+                onPressed: () => setState(() {
+                  _sidebarExtended = !_sidebarExtended;
+                }),
+                icon: const Icon(Icons.chevron_right_rounded, size: 22),
+                tooltip: 'Expand',
+                style: IconButton.styleFrom(
+                  foregroundColor: colorScheme.onSurfaceVariant,
+                  minimumSize: const Size(36, 36),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
             ),
-          );
-        },
-      ),
     );
   }
 
@@ -540,84 +531,77 @@ class _SidebarButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Determine layout based on actual available width
-        final isActuallyExtended = constraints.maxWidth > 100;
-
-        if (isActuallyExtended) {
-          return Material(
-            color: isPrimary
-                ? colorScheme.primaryContainer
-                : colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              onTap: onPressed,
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                height: 44,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      icon,
-                      size: 20,
+    if (isExtended) {
+      return Material(
+        color: isPrimary
+            ? colorScheme.primaryContainer
+            : colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: isPrimary
+                      ? colorScheme.onPrimaryContainer
+                      : colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
                       color: isPrimary
                           ? colorScheme.onPrimaryContainer
                           : colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 14,
                     ),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: Text(
-                        label,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: isPrimary
-                              ? colorScheme.onPrimaryContainer
-                              : colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-
-        // Collapsed state
-        return Tooltip(
-          message: label,
-          preferBelow: false,
-          child: Material(
-            color: isPrimary
-                ? colorScheme.primaryContainer
-                : colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              onTap: onPressed,
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: 48,
-                height: 44,
-                child: Center(
-                  child: Icon(
-                    icon,
-                    size: 20,
-                    color: isPrimary
-                        ? colorScheme.onPrimaryContainer
-                        : colorScheme.onSurfaceVariant,
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Collapsed state
+    return Tooltip(
+      message: label,
+      preferBelow: false,
+      child: Material(
+        color: isPrimary
+            ? colorScheme.primaryContainer
+            : colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            width: 48,
+            height: 44,
+            child: Center(
+              child: Icon(
+                icon,
+                size: 20,
+                color: isPrimary
+                    ? colorScheme.onPrimaryContainer
+                    : colorScheme.onSurfaceVariant,
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -648,43 +632,11 @@ class _SidebarTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Determine layout based on actual available width
-        final isActuallyExtended = constraints.maxWidth > 100;
-
-        if (!isActuallyExtended) {
-          return Tooltip(
-            message: label,
-            preferBelow: false,
-            child: Material(
-              color: isSelected
-                  ? colorScheme.secondaryContainer
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-              child: InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  width: 48,
-                  height: 44,
-                  child: Center(
-                    child: Icon(
-                      isSelected ? selectedIcon : icon,
-                      size: 22,
-                      color: isSelected
-                          ? colorScheme.onSecondaryContainer
-                          : colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
-
-        // Extended state
-        return Material(
+    if (!isExtended) {
+      return Tooltip(
+        message: label,
+        preferBelow: false,
+        child: Material(
           color: isSelected
               ? colorScheme.secondaryContainer
               : Colors.transparent,
@@ -692,94 +644,117 @@ class _SidebarTile extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(12),
-            child: Container(
+            child: SizedBox(
+              width: 48,
               height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isSelected ? selectedIcon : icon,
-                    size: 20,
-                    color: isSelected
-                        ? colorScheme.onSecondaryContainer
-                        : colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 12),
-                  Flexible(
-                    child: Text(
-                      label,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isSelected
-                            ? colorScheme.onSecondaryContainer
-                            : colorScheme.onSurface,
-                        fontWeight: isSelected
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                  if (count != null && count! > 0) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? colorScheme.onSecondaryContainer.withValues(
-                                alpha: 0.2,
-                              )
-                            : colorScheme.surfaceContainerHigh,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '$count',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: isSelected
-                              ? colorScheme.onSecondaryContainer
-                              : colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    if (onDelete != null) const SizedBox(width: 4),
-                  ],
-                  if (onDelete != null)
-                    SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: IconButton(
-                        onPressed: onDelete,
-                        icon: Icon(
-                          Icons.close_rounded,
-                          size: 16,
-                          color: isSelected
-                              ? colorScheme.onSecondaryContainer.withValues(
-                                  alpha: 0.7,
-                                )
-                              : colorScheme.onSurfaceVariant,
-                        ),
-                        padding: EdgeInsets.zero,
-                        tooltip: 'Delete shelf',
-                        style: IconButton.styleFrom(
-                          minimumSize: const Size(28, 28),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+              child: Center(
+                child: Icon(
+                  isSelected ? selectedIcon : icon,
+                  size: 22,
+                  color: isSelected
+                      ? colorScheme.onSecondaryContainer
+                      : colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
-        );
-      },
+        ),
+      );
+    }
+
+    // Extended state
+    return Material(
+      color: isSelected ? colorScheme.secondaryContainer : Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isSelected ? selectedIcon : icon,
+                size: 20,
+                color: isSelected
+                    ? colorScheme.onSecondaryContainer
+                    : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isSelected
+                        ? colorScheme.onSecondaryContainer
+                        : colorScheme.onSurface,
+                    fontWeight: isSelected
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                  ),
+                ),
+              ),
+              if (count != null && count! > 0) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? colorScheme.onSecondaryContainer.withValues(
+                            alpha: 0.2,
+                          )
+                        : colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: isSelected
+                          ? colorScheme.onSecondaryContainer
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                if (onDelete != null) const SizedBox(width: 4),
+              ],
+              if (onDelete != null)
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: IconButton(
+                    onPressed: onDelete,
+                    icon: Icon(
+                      Icons.close_rounded,
+                      size: 16,
+                      color: isSelected
+                          ? colorScheme.onSecondaryContainer.withValues(
+                              alpha: 0.7,
+                            )
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                    padding: EdgeInsets.zero,
+                    tooltip: 'Delete shelf',
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(28, 28),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

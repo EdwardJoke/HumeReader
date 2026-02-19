@@ -300,19 +300,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
       height: 64,
       child: isExtended
           ? Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Flexible(
-                    child: Text(
-                      'Library',
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
-                      ),
+                  Text(
+                    'Library',
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
                     ),
                   ),
                   IconButton(
@@ -540,11 +537,10 @@ class _SidebarButton extends StatelessWidget {
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(12),
-          child: Container(
+          child: SizedBox(
             height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisSize: MainAxisSize.max,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
@@ -669,12 +665,12 @@ class _SidebarTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: Container(
+        child: SizedBox(
           height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: MainAxisSize.max,
             children: [
+              const SizedBox(width: 12),
               Icon(
                 isSelected ? selectedIcon : icon,
                 size: 20,
@@ -751,6 +747,7 @@ class _SidebarTile extends StatelessWidget {
                     ),
                   ),
                 ),
+              const SizedBox(width: 12),
             ],
           ),
         ),

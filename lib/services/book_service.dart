@@ -188,10 +188,15 @@ class BookService {
     void collectChapters(List<EpubChapter> epubChapters) {
       for (final chapter in epubChapters) {
         final title = chapter.Title ?? 'Chapter ${index + 1}';
-        final content = chapter.HtmlContent ?? '';
+        final htmlContent = chapter.HtmlContent ?? '';
 
         chapters.add(
-          BookChapter(title: title, content: _stripHtml(content), index: index),
+          BookChapter(
+            title: title,
+            content: _stripHtml(htmlContent),
+            htmlContent: _cleanHtml(htmlContent),
+            index: index,
+          ),
         );
         index++;
 
@@ -204,16 +209,20 @@ class BookService {
     if (epubBook.Chapters != null && epubBook.Chapters!.isNotEmpty) {
       collectChapters(epubBook.Chapters!);
     } else {
-      final allContent = StringBuffer();
+      final allHtmlContent = StringBuffer();
+      final allTextContent = StringBuffer();
       epubBook.Content?.Html?.forEach((key, value) {
-        allContent.write(_stripHtml(value.Content ?? ''));
-        allContent.write('\n\n');
+        final html = value.Content ?? '';
+        allHtmlContent.write(html);
+        allTextContent.write(_stripHtml(html));
+        allTextContent.write('\n\n');
       });
-      if (allContent.isNotEmpty) {
+      if (allHtmlContent.isNotEmpty) {
         chapters.add(
           BookChapter(
             title: book.title,
-            content: allContent.toString().trim(),
+            content: allTextContent.toString().trim(),
+            htmlContent: _cleanHtml(allHtmlContent.toString()),
             index: 0,
           ),
         );
@@ -221,6 +230,19 @@ class BookService {
     }
 
     return chapters;
+  }
+
+  String _cleanHtml(String html) {
+    return html
+        .replaceAll(
+          RegExp(r'<script[^>]*>[\s\S]*?</script>', caseSensitive: false),
+          '',
+        )
+        .replaceAll(
+          RegExp(r'<style[^>]*>[\s\S]*?</style>', caseSensitive: false),
+          '',
+        )
+        .trim();
   }
 
   String _stripHtml(String html) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'package:hume/models/book.dart';
 import 'package:hume/models/book_chapter.dart';
 import 'package:hume/services/book_service.dart';
@@ -18,6 +19,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   late ScrollController _scrollController;
 
   String _content = '';
+  String _htmlContent = '';
   double _fontSize = 18;
   List<BookChapter>? _chapters;
   int _currentChapterIndex = 0;
@@ -46,6 +48,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
       if (_chapters != null && _chapters!.isNotEmpty) {
         setState(() {
           _content = _chapters![_currentChapterIndex].content;
+          _htmlContent =
+              _chapters![_currentChapterIndex].htmlContent ?? _content;
         });
         return _content;
       }
@@ -63,6 +67,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _isLoadingChapter = true;
       _currentChapterIndex = index;
       _content = _chapters![index].content;
+      _htmlContent = _chapters![index].htmlContent ?? _content;
     });
 
     _scrollController.jumpTo(0);
@@ -204,13 +209,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   child: SingleChildScrollView(
                     controller: _scrollController,
                     padding: const EdgeInsets.all(24),
-                    child: SelectableText(
-                      _content,
-                      style: TextStyle(
-                        fontSize: _fontSize,
-                        height: _lineHeight,
-                      ),
-                    ),
+                    child: _buildContent(),
                   ),
                 ),
               ),
@@ -242,6 +241,79 @@ class _ReaderScreenState extends State<ReaderScreen> {
           _chapters != null && _chapters!.isNotEmpty && _chapters!.length > 1
           ? _buildChapterNavigation()
           : null,
+    );
+  }
+
+  Widget _buildContent() {
+    if (widget.book.format == 'epub' && _htmlContent.isNotEmpty) {
+      return Html(
+        data: _htmlContent,
+        style: {
+          'body': Style(
+            fontSize: FontSize(_fontSize),
+            lineHeight: LineHeight(_lineHeight),
+            margin: Margins.zero,
+            padding: HtmlPaddings.zero,
+          ),
+          'h1': Style(
+            fontSize: FontSize(_fontSize * 1.8),
+            fontWeight: FontWeight.bold,
+            lineHeight: LineHeight(1.3),
+            margin: Margins.only(bottom: 16, top: 24),
+          ),
+          'h2': Style(
+            fontSize: FontSize(_fontSize * 1.5),
+            fontWeight: FontWeight.bold,
+            lineHeight: LineHeight(1.3),
+            margin: Margins.only(bottom: 12, top: 20),
+          ),
+          'h3': Style(
+            fontSize: FontSize(_fontSize * 1.3),
+            fontWeight: FontWeight.bold,
+            lineHeight: LineHeight(1.4),
+            margin: Margins.only(bottom: 10, top: 16),
+          ),
+          'h4': Style(
+            fontSize: FontSize(_fontSize * 1.15),
+            fontWeight: FontWeight.bold,
+            lineHeight: LineHeight(1.4),
+            margin: Margins.only(bottom: 8, top: 12),
+          ),
+          'h5': Style(
+            fontSize: FontSize(_fontSize * 1.0),
+            fontWeight: FontWeight.bold,
+            lineHeight: LineHeight(1.5),
+            margin: Margins.only(bottom: 6, top: 10),
+          ),
+          'h6': Style(
+            fontSize: FontSize(_fontSize * 0.9),
+            fontWeight: FontWeight.bold,
+            lineHeight: LineHeight(1.5),
+            margin: Margins.only(bottom: 6, top: 10),
+          ),
+          'p': Style(
+            fontSize: FontSize(_fontSize),
+            lineHeight: LineHeight(_lineHeight),
+            margin: Margins.only(bottom: 12),
+          ),
+          'blockquote': Style(
+            fontSize: FontSize(_fontSize * 0.95),
+            fontStyle: FontStyle.italic,
+            padding: HtmlPaddings.only(left: 16),
+            margin: Margins.only(bottom: 12, top: 12),
+            border: Border(left: BorderSide(width: 4)),
+          ),
+          'li': Style(
+            fontSize: FontSize(_fontSize),
+            lineHeight: LineHeight(_lineHeight),
+          ),
+        },
+      );
+    }
+
+    return SelectableText(
+      _content,
+      style: TextStyle(fontSize: _fontSize, height: _lineHeight),
     );
   }
 

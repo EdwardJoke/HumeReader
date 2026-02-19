@@ -50,6 +50,9 @@ dependencies:
   
   # EPUB parsing
   epubx: ^4.0.0
+  
+  # HTML rendering
+  flutter_html: ^3.0.0-beta.2
 
 dev_dependencies:
   flutter_test:

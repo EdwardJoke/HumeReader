@@ -21,6 +21,22 @@ class BookCard extends StatelessWidget {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
+  Widget _buildDefaultCover(ColorScheme colorScheme) {
+    return Container(
+      width: 56,
+      height: 80,
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(
+        Icons.menu_book,
+        color: colorScheme.onPrimaryContainer,
+        size: 28,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -34,18 +50,18 @@ class BookCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Container(
-                width: 56,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.menu_book,
-                  color: colorScheme.onPrimaryContainer,
-                  size: 28,
-                ),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: book.coverImage != null
+                    ? Image.memory(
+                        book.coverImage!,
+                        width: 56,
+                        height: 80,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            _buildDefaultCover(colorScheme),
+                      )
+                    : _buildDefaultCover(colorScheme),
               ),
               const SizedBox(width: 16),
               Expanded(

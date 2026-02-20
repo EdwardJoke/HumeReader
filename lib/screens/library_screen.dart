@@ -286,6 +286,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 isPrimary: false,
               ),
             ),
+
+            // Expand/Collapse Button on mobile (positioned under New Shelf)
+            if (PlatformUtils.isMobile)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                child: _SidebarButton(
+                  icon: _sidebarExtended
+                      ? Icons.chevron_left_rounded
+                      : Icons.chevron_right_rounded,
+                  label: _sidebarExtended ? 'Collapse' : 'Expand',
+                  onPressed: () => setState(() {
+                    _sidebarExtended = !_sidebarExtended;
+                  }),
+                  isExtended: _sidebarExtended,
+                  isPrimary: false,
+                ),
+              ),
           ],
         ),
       ),
@@ -295,6 +312,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget _buildSidebarHeader() {
     final colorScheme = Theme.of(context).colorScheme;
     final isExtended = _sidebarExtended;
+    final isMobile = PlatformUtils.isMobile;
 
     return SizedBox(
       height: 64,
@@ -312,21 +330,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       color: colorScheme.onSurface,
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => setState(() {
-                      _sidebarExtended = !_sidebarExtended;
-                    }),
-                    icon: const Icon(Icons.chevron_left_rounded, size: 22),
-                    tooltip: 'Collapse',
-                    style: IconButton.styleFrom(
-                      foregroundColor: colorScheme.onSurfaceVariant,
-                      minimumSize: const Size(36, 36),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  // Hide expand/collapse button in header on mobile (moved to bottom)
+                  if (!isMobile)
+                    IconButton(
+                      onPressed: () => setState(() {
+                        _sidebarExtended = !_sidebarExtended;
+                      }),
+                      icon: const Icon(Icons.chevron_left_rounded, size: 22),
+                      tooltip: 'Collapse',
+                      style: IconButton.styleFrom(
+                        foregroundColor: colorScheme.onSurfaceVariant,
+                        minimumSize: const Size(36, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                     ),
-                  ),
                 ],
               ),
             )
+          // On mobile in collapsed state, show nothing (button is at bottom)
+          : isMobile
+          ? const SizedBox.shrink()
           : Center(
               child: IconButton(
                 onPressed: () => setState(() {

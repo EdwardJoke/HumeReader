@@ -1,11 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hume/providers.dart';
 import 'package:hume/screens/home_screen.dart';
 import 'package:hume/theme/app_theme.dart';
+import 'package:hume/utils/platform_utils.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await themeProvider.loadPreferences();
+
+  // Enable full-screen mode on mobile devices
+  if (PlatformUtils.isMobile) {
+    // Hide system UI (status bar and navigation bar) in immersive sticky mode
+    await SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.immersiveSticky,
+      overlays: [],
+    );
+    // Lock orientation to portrait for consistent mobile experience
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
+
   runApp(const HumeApp());
 }
 

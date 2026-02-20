@@ -1,15 +1,22 @@
-import 'dart:io';
+import 'dart:io' if (dart.library.html) 'dart:html';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Utility class for platform-specific operations, especially macOS permissions.
 class PlatformUtils {
+  /// Returns true if the app is running on the web.
+  static bool get isWeb => kIsWeb;
+
   /// Returns true if the app is running on macOS.
-  static bool get isMacOS => Platform.isMacOS;
+  static bool get isMacOS => !kIsWeb && Platform.isMacOS;
 
   /// Returns true if the app is running on a desktop platform (macOS, Windows, Linux).
   static bool get isDesktop =>
-      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+      !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+  /// Returns true if the app is running on a mobile platform (Android, iOS).
+  static bool get isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   /// Shows a dialog with instructions for granting file access permission on macOS.
   ///

@@ -6,6 +6,7 @@ import 'package:hume/models/book.dart';
 import 'package:hume/models/book_chapter.dart';
 import 'package:hume/services/book_service.dart';
 import 'package:hume/utils/platform_utils.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ReaderScreen extends StatefulWidget {
   final Book book;
@@ -248,9 +249,17 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   /// Handle link taps in EPUB content
   void _handleLinkTap(String? url, Map<String, String> attributes) {
-    if (url == null || url.isEmpty || _chapters == null) return;
+    if (url == null || url.isEmpty) return;
 
-    // Parse the URL to extract the file name (remove anchor part)
+    // Check if it's an external URL (http:// or https://)
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      _showExternalLinkDialog(url);
+      return;
+    }
+
+    // Handle internal chapter navigation
+    if (_chapters == null) return;
+
     String targetHref = url;
 
     // Remove anchor part (e.g., "#section" from "chapter1.html#section")
@@ -260,7 +269,6 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
 
     // Handle relative paths - extract just the file name
-    // e.g., "../text/chapter1.html" -> "chapter1.html"
     if (targetHref.contains('/')) {
       targetHref = targetHref.split('/').last;
     }
@@ -270,7 +278,6 @@ class _ReaderScreenState extends State<ReaderScreen>
       final chapter = _chapters![i];
       if (chapter.href != null) {
         String chapterHref = chapter.href!;
-        // Extract file name from chapter href
         if (chapterHref.contains('/')) {
           chapterHref = chapterHref.split('/').last;
         }
@@ -281,10 +288,47 @@ class _ReaderScreenState extends State<ReaderScreen>
         }
       }
     }
+  }
 
-    // If no match found by file name, try to find by index in URL
-    // Some EPUBs use numeric references
-    debugPrint('Link target not found: $url');
+  /// Show confirmation dialog for external links
+  Future<void> _showExternalLinkDialog(String url) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Open External Link'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Open this link in your browser?'),
+            const SizedBox(height: 8),
+            Text(
+              url,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Open'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true && mounted) {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    }
   }
 
   @override

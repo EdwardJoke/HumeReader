@@ -333,24 +333,51 @@ class BookService {
     );
   }
 
+  /// Save reading position (chapter index, scroll position) and update progress
+  Future<void> saveReadingPosition({
+    required Book book,
+    int? chapterIndex,
+    double? scrollPosition,
+    int? currentPage,
+    int? totalPages,
+  }) async {
+    // Calculate progress based on EPUB chapters or TXT pages
+    int progress = book.readingProgress;
+
+    if (book.format == 'epub' && chapterIndex != null) {
+      // For EPUB, we estimate progress based on chapters
+      // Get total chapters to calculate percentage
+      final chapters = await getEpubChapters(book);
+      if (chapters.isNotEmpty) {
+        progress = ((chapterIndex / chapters.length) * 100).round();
+      }
+    } else if (currentPage != null && totalPages != null && totalPages > 0) {
+      progress = ((currentPage / totalPages) * 100).round();
+    }
+
+    final updatedBook = book.copyWith(
+      currentChapterIndex: chapterIndex ?? book.currentChapterIndex,
+      scrollPosition: scrollPosition ?? book.scrollPosition,
+      currentPage: currentPage ?? book.currentPage,
+      totalPages: totalPages ?? book.totalPages,
+      readingProgress: progress,
+      lastReadAt: DateTime.now(),
+    );
+
+    await updateBook(updatedBook);
+    await _updateStatsBookCount();
+  }
+
   Future<void> updateReadingProgress(
     Book book,
     int currentPage,
     int totalPages,
   ) async {
-    final progress = totalPages > 0
-        ? ((currentPage / totalPages) * 100).round()
-        : 0;
-    final updatedBook = book.copyWith(
+    await saveReadingPosition(
+      book: book,
       currentPage: currentPage,
       totalPages: totalPages,
-      readingProgress: progress,
-      lastReadAt: DateTime.now(),
     );
-    await updateBook(updatedBook);
-
-    // Recalculate stats including average progress
-    await _updateStatsBookCount();
 
     final stats = await getStats();
     await updateStats(

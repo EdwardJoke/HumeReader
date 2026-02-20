@@ -14,9 +14,11 @@ class ReaderScreen extends StatefulWidget {
   State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _ReaderScreenState extends State<ReaderScreen> {
+class _ReaderScreenState extends State<ReaderScreen>
+    with WidgetsBindingObserver {
   late Future<String> _contentFuture;
   late ScrollController _scrollController;
+  late BookService _bookService;
 
   String _content = '';
   String _htmlContent = '';
@@ -24,44 +26,105 @@ class _ReaderScreenState extends State<ReaderScreen> {
   List<BookChapter>? _chapters;
   int _currentChapterIndex = 0;
   bool _isLoadingChapter = false;
+  bool _isRestoringPosition = false;
 
   static const double _lineHeight = 1.8;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scrollController = ScrollController();
+    _currentChapterIndex = widget.book.currentChapterIndex;
+    _scrollController.addListener(_onScrollChanged);
     _contentFuture = _loadContent();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _saveReadingPosition();
+    }
+  }
+
+  @override
   void dispose() {
+    _saveReadingPosition();
+    WidgetsBinding.instance.removeObserver(this);
+    _scrollController.removeListener(_onScrollChanged);
     _scrollController.dispose();
     super.dispose();
   }
 
+  void _onScrollChanged() {
+    // Throttled save - only save every 500 pixels of scroll to reduce I/O
+    if (_scrollController.offset % 500 < 10) {
+      _saveReadingPosition();
+    }
+  }
+
+  Future<void> _saveReadingPosition() async {
+    if (_isRestoringPosition) return;
+
+    try {
+      await _bookService.saveReadingPosition(
+        book: widget.book,
+        chapterIndex: _currentChapterIndex,
+        scrollPosition: _scrollController.hasClients
+            ? _scrollController.offset
+            : 0,
+      );
+    } catch (e) {
+      debugPrint('Error saving reading position: $e');
+    }
+  }
+
   Future<String> _loadContent() async {
-    final service = await BookService.create();
+    _bookService = await BookService.create();
 
     if (widget.book.format == 'epub') {
-      _chapters = await service.getEpubChapters(widget.book);
+      _chapters = await _bookService.getEpubChapters(widget.book);
       if (_chapters != null && _chapters!.isNotEmpty) {
+        // Clamp chapter index to valid range
+        final validIndex = _currentChapterIndex.clamp(0, _chapters!.length - 1);
         setState(() {
-          _content = _chapters![_currentChapterIndex].content;
-          _htmlContent =
-              _chapters![_currentChapterIndex].htmlContent ?? _content;
+          _currentChapterIndex = validIndex;
+          _content = _chapters![validIndex].content;
+          _htmlContent = _chapters![validIndex].htmlContent ?? _content;
         });
+
+        // Restore scroll position after content loads
+        _restoreScrollPosition();
         return _content;
       }
     }
 
-    final content = await service.getBookContent(widget.book);
+    final content = await _bookService.getBookContent(widget.book);
     setState(() => _content = content);
+
+    // Restore scroll position for TXT files
+    _restoreScrollPosition();
     return content;
+  }
+
+  void _restoreScrollPosition() {
+    if (widget.book.scrollPosition > 0) {
+      _isRestoringPosition = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(widget.book.scrollPosition);
+        }
+        _isRestoringPosition = false;
+      });
+    }
   }
 
   void _loadChapter(int index) {
     if (_chapters == null || index < 0 || index >= _chapters!.length) return;
+
+    // Save position before changing chapter
+    _saveReadingPosition();
 
     setState(() {
       _isLoadingChapter = true;
@@ -73,6 +136,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _scrollController.jumpTo(0);
 
     setState(() => _isLoadingChapter = false);
+
+    // Save position after chapter change
+    _saveReadingPosition();
   }
 
   void _nextChapter() {

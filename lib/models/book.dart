@@ -14,6 +14,8 @@ class Book {
   final int totalPages;
   final int readingProgress;
   final Uint8List? coverImage;
+  final int currentChapterIndex; // For EPUB: which chapter user is on
+  final double scrollPosition; // Scroll position within chapter/content
 
   const Book({
     required this.id,
@@ -28,6 +30,8 @@ class Book {
     this.totalPages = 0,
     this.readingProgress = 0,
     this.coverImage,
+    this.currentChapterIndex = 0,
+    this.scrollPosition = 0.0,
   });
 
   Book copyWith({
@@ -43,6 +47,8 @@ class Book {
     int? totalPages,
     int? readingProgress,
     Uint8List? coverImage,
+    int? currentChapterIndex,
+    double? scrollPosition,
   }) {
     return Book(
       id: id ?? this.id,
@@ -57,6 +63,8 @@ class Book {
       totalPages: totalPages ?? this.totalPages,
       readingProgress: readingProgress ?? this.readingProgress,
       coverImage: coverImage ?? this.coverImage,
+      currentChapterIndex: currentChapterIndex ?? this.currentChapterIndex,
+      scrollPosition: scrollPosition ?? this.scrollPosition,
     );
   }
 
@@ -74,6 +82,8 @@ class Book {
       'totalPages': totalPages,
       'readingProgress': readingProgress,
       'coverImage': coverImage != null ? base64Encode(coverImage!) : null,
+      'currentChapterIndex': currentChapterIndex,
+      'scrollPosition': scrollPosition,
     };
   }
 
@@ -95,6 +105,8 @@ class Book {
       coverImage: map['coverImage'] != null
           ? base64Decode(map['coverImage'] as String)
           : null,
+      currentChapterIndex: map['currentChapterIndex'] as int? ?? 0,
+      scrollPosition: (map['scrollPosition'] as num?)?.toDouble() ?? 0.0,
     );
   }
 

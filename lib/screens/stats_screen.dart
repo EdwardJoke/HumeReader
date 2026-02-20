@@ -44,8 +44,8 @@ class _StatsScreenState extends State<StatsScreen> {
           const SizedBox(height: 12),
           _buildStatCard(
             icon: Icons.book,
-            title: 'Books Read',
-            value: _stats.booksRead.toString(),
+            title: 'Avg Progress',
+            value: '${_stats.booksReadAverage}%',
             color: colorScheme.secondaryContainer,
           ),
           const SizedBox(height: 12),

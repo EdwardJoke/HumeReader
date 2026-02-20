@@ -292,7 +292,23 @@ class BookService {
   Future<void> _updateStatsBookCount() async {
     final books = await getBooks();
     final stats = await getStats();
-    await updateStats(stats.copyWith(totalBooks: books.length));
+
+    // Calculate average reading progress across all books
+    int averageProgress = 0;
+    if (books.isNotEmpty) {
+      final totalProgress = books.fold<int>(
+        0,
+        (sum, book) => sum + book.readingProgress,
+      );
+      averageProgress = (totalProgress / books.length).round();
+    }
+
+    await updateStats(
+      stats.copyWith(
+        totalBooks: books.length,
+        booksReadAverage: averageProgress,
+      ),
+    );
   }
 
   Future<void> updateReadingProgress(
@@ -310,6 +326,9 @@ class BookService {
       lastReadAt: DateTime.now(),
     );
     await updateBook(updatedBook);
+
+    // Recalculate stats including average progress
+    await _updateStatsBookCount();
 
     final stats = await getStats();
     await updateStats(

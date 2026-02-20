@@ -1,6 +1,6 @@
 class ReadingStats {
   final int totalBooks;
-  final int booksRead;
+  final int booksReadAverage; // Average reading progress % across all books
   final int totalPagesRead;
   final int totalReadingTimeMinutes;
   final int currentStreak;
@@ -9,7 +9,7 @@ class ReadingStats {
 
   const ReadingStats({
     this.totalBooks = 0,
-    this.booksRead = 0,
+    this.booksReadAverage = 0,
     this.totalPagesRead = 0,
     this.totalReadingTimeMinutes = 0,
     this.currentStreak = 0,
@@ -19,7 +19,7 @@ class ReadingStats {
 
   ReadingStats copyWith({
     int? totalBooks,
-    int? booksRead,
+    int? booksReadAverage,
     int? totalPagesRead,
     int? totalReadingTimeMinutes,
     int? currentStreak,
@@ -28,7 +28,7 @@ class ReadingStats {
   }) {
     return ReadingStats(
       totalBooks: totalBooks ?? this.totalBooks,
-      booksRead: booksRead ?? this.booksRead,
+      booksReadAverage: booksReadAverage ?? this.booksReadAverage,
       totalPagesRead: totalPagesRead ?? this.totalPagesRead,
       totalReadingTimeMinutes:
           totalReadingTimeMinutes ?? this.totalReadingTimeMinutes,
@@ -50,7 +50,7 @@ class ReadingStats {
   Map<String, dynamic> toMap() {
     return {
       'totalBooks': totalBooks,
-      'booksRead': booksRead,
+      'booksReadAverage': booksReadAverage,
       'totalPagesRead': totalPagesRead,
       'totalReadingTimeMinutes': totalReadingTimeMinutes,
       'currentStreak': currentStreak,
@@ -62,7 +62,7 @@ class ReadingStats {
   factory ReadingStats.fromMap(Map<String, dynamic> map) {
     return ReadingStats(
       totalBooks: map['totalBooks'] as int? ?? 0,
-      booksRead: map['booksRead'] as int? ?? 0,
+      booksReadAverage: map['booksReadAverage'] as int? ?? 0,
       totalPagesRead: map['totalPagesRead'] as int? ?? 0,
       totalReadingTimeMinutes: map['totalReadingTimeMinutes'] as int? ?? 0,
       currentStreak: map['currentStreak'] as int? ?? 0,

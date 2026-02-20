@@ -5,12 +5,14 @@ class BookChapter {
   final String content;
   final String? htmlContent;
   final int index;
+  final String? href; // Original file path in EPUB (e.g., "text/chapter1.html")
 
   const BookChapter({
     required this.title,
     required this.content,
     this.htmlContent,
     required this.index,
+    this.href,
   });
 
   Map<String, dynamic> toMap() {
@@ -19,6 +21,7 @@ class BookChapter {
       'content': content,
       'htmlContent': htmlContent,
       'index': index,
+      'href': href,
     };
   }
 
@@ -28,6 +31,7 @@ class BookChapter {
       content: map['content'] as String,
       htmlContent: map['htmlContent'] as String?,
       index: map['index'] as int,
+      href: map['href'] as String?,
     );
   }
 

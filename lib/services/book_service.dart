@@ -189,6 +189,7 @@ class BookService {
       for (final chapter in epubChapters) {
         final title = chapter.Title ?? 'Chapter ${index + 1}';
         final htmlContent = chapter.HtmlContent ?? '';
+        final href = chapter.ContentFileName;
 
         chapters.add(
           BookChapter(
@@ -196,6 +197,7 @@ class BookService {
             content: _stripHtml(htmlContent),
             htmlContent: _cleanHtml(htmlContent),
             index: index,
+            href: href,
           ),
         );
         index++;
@@ -209,24 +211,21 @@ class BookService {
     if (epubBook.Chapters != null && epubBook.Chapters!.isNotEmpty) {
       collectChapters(epubBook.Chapters!);
     } else {
-      final allHtmlContent = StringBuffer();
-      final allTextContent = StringBuffer();
+      // Fallback: create chapters from all HTML content files
       epubBook.Content?.Html?.forEach((key, value) {
         final html = value.Content ?? '';
-        allHtmlContent.write(html);
-        allTextContent.write(_stripHtml(html));
-        allTextContent.write('\n\n');
+        if (html.isNotEmpty) {
+          chapters.add(
+            BookChapter(
+              title: value.FileName ?? key,
+              content: _stripHtml(html),
+              htmlContent: _cleanHtml(html),
+              index: chapters.length,
+              href: value.FileName ?? key,
+            ),
+          );
+        }
       });
-      if (allHtmlContent.isNotEmpty) {
-        chapters.add(
-          BookChapter(
-            title: book.title,
-            content: allTextContent.toString().trim(),
-            htmlContent: _cleanHtml(allHtmlContent.toString()),
-            index: 0,
-          ),
-        );
-      }
     }
 
     return chapters;

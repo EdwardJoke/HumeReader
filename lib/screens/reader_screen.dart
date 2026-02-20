@@ -246,6 +246,47 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
+  /// Handle link taps in EPUB content
+  void _handleLinkTap(String? url, Map<String, String> attributes) {
+    if (url == null || url.isEmpty || _chapters == null) return;
+
+    // Parse the URL to extract the file name (remove anchor part)
+    String targetHref = url;
+
+    // Remove anchor part (e.g., "#section" from "chapter1.html#section")
+    final anchorIndex = targetHref.indexOf('#');
+    if (anchorIndex > 0) {
+      targetHref = targetHref.substring(0, anchorIndex);
+    }
+
+    // Handle relative paths - extract just the file name
+    // e.g., "../text/chapter1.html" -> "chapter1.html"
+    if (targetHref.contains('/')) {
+      targetHref = targetHref.split('/').last;
+    }
+
+    // Find the chapter with matching href
+    for (int i = 0; i < _chapters!.length; i++) {
+      final chapter = _chapters![i];
+      if (chapter.href != null) {
+        String chapterHref = chapter.href!;
+        // Extract file name from chapter href
+        if (chapterHref.contains('/')) {
+          chapterHref = chapterHref.split('/').last;
+        }
+
+        if (chapterHref == targetHref) {
+          _loadChapter(i);
+          return;
+        }
+      }
+    }
+
+    // If no match found by file name, try to find by index in URL
+    // Some EPUBs use numeric references
+    debugPrint('Link target not found: $url');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -379,6 +420,9 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (widget.book.format == 'epub' && _htmlContent.isNotEmpty) {
       return Html(
         data: _htmlContent,
+        onLinkTap: (url, attributes, element) {
+          _handleLinkTap(url, attributes);
+        },
         style: {
           'body': Style(
             fontSize: FontSize(_fontSize),
@@ -437,6 +481,10 @@ class _ReaderScreenState extends State<ReaderScreen>
           'li': Style(
             fontSize: FontSize(_fontSize),
             lineHeight: LineHeight(_lineHeight),
+          ),
+          'a': Style(
+            color: Theme.of(context).colorScheme.primary,
+            textDecoration: TextDecoration.underline,
           ),
         },
       );

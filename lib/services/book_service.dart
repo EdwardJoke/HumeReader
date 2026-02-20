@@ -278,11 +278,33 @@ class BookService {
   }
 
   Future<ReadingStats> getStats() async {
-    final statsJson = _prefs.getString(_statsKey);
-    if (statsJson == null) {
-      return const ReadingStats();
+    final books = await getBooks();
+
+    // Calculate real-time stats from actual book data
+    int totalBooks = books.length;
+    int booksReadAverage = 0;
+
+    if (books.isNotEmpty) {
+      final totalProgress = books.fold<int>(
+        0,
+        (sum, book) => sum + book.readingProgress,
+      );
+      booksReadAverage = (totalProgress / books.length).round();
     }
-    return ReadingStats.fromMap(jsonDecode(statsJson) as Map<String, dynamic>);
+
+    // Get stored stats for streak/time data (not calculated from books)
+    final statsJson = _prefs.getString(_statsKey);
+    ReadingStats storedStats = const ReadingStats();
+    if (statsJson != null) {
+      storedStats = ReadingStats.fromMap(
+        jsonDecode(statsJson) as Map<String, dynamic>,
+      );
+    }
+
+    return storedStats.copyWith(
+      totalBooks: totalBooks,
+      booksReadAverage: booksReadAverage,
+    );
   }
 
   Future<void> updateStats(ReadingStats stats) async {

@@ -285,9 +285,10 @@ class BookService {
     int booksReadAverage = 0;
 
     if (books.isNotEmpty) {
+      // Use maxReadingProgress (never decreases) instead of current readingProgress
       final totalProgress = books.fold<int>(
         0,
-        (sum, book) => sum + book.readingProgress,
+        (sum, book) => sum + book.maxReadingProgress,
       );
       booksReadAverage = (totalProgress / books.length).round();
     }
@@ -328,11 +329,12 @@ class BookService {
     final stats = await getStats();
 
     // Calculate average reading progress across all books
+    // Use maxReadingProgress (never decreases) instead of current readingProgress
     int averageProgress = 0;
     if (books.isNotEmpty) {
       final totalProgress = books.fold<int>(
         0,
-        (sum, book) => sum + book.readingProgress,
+        (sum, book) => sum + book.maxReadingProgress,
       );
       averageProgress = (totalProgress / books.length).round();
     }
@@ -367,12 +369,18 @@ class BookService {
       progress = ((currentPage / totalPages) * 100).round();
     }
 
+    // Only update max progress if new progress is higher (never decreases)
+    final maxProgress = progress > book.maxReadingProgress
+        ? progress
+        : book.maxReadingProgress;
+
     final updatedBook = book.copyWith(
       currentChapterIndex: chapterIndex ?? book.currentChapterIndex,
       scrollPosition: scrollPosition ?? book.scrollPosition,
       currentPage: currentPage ?? book.currentPage,
       totalPages: totalPages ?? book.totalPages,
       readingProgress: progress,
+      maxReadingProgress: maxProgress,
       lastReadAt: DateTime.now(),
     );
 

@@ -12,7 +12,9 @@ class Book {
   final DateTime? lastReadAt;
   final int currentPage;
   final int totalPages;
-  final int readingProgress;
+  final int readingProgress; // Current reading progress (0-100)
+  final int
+  maxReadingProgress; // Maximum progress ever achieved (never decreases)
   final Uint8List? coverImage;
   final int currentChapterIndex; // For EPUB: which chapter user is on
   final double scrollPosition; // Scroll position within chapter/content
@@ -29,6 +31,7 @@ class Book {
     this.currentPage = 0,
     this.totalPages = 0,
     this.readingProgress = 0,
+    this.maxReadingProgress = 0,
     this.coverImage,
     this.currentChapterIndex = 0,
     this.scrollPosition = 0.0,
@@ -46,6 +49,7 @@ class Book {
     int? currentPage,
     int? totalPages,
     int? readingProgress,
+    int? maxReadingProgress,
     Uint8List? coverImage,
     int? currentChapterIndex,
     double? scrollPosition,
@@ -62,6 +66,7 @@ class Book {
       currentPage: currentPage ?? this.currentPage,
       totalPages: totalPages ?? this.totalPages,
       readingProgress: readingProgress ?? this.readingProgress,
+      maxReadingProgress: maxReadingProgress ?? this.maxReadingProgress,
       coverImage: coverImage ?? this.coverImage,
       currentChapterIndex: currentChapterIndex ?? this.currentChapterIndex,
       scrollPosition: scrollPosition ?? this.scrollPosition,
@@ -81,6 +86,7 @@ class Book {
       'currentPage': currentPage,
       'totalPages': totalPages,
       'readingProgress': readingProgress,
+      'maxReadingProgress': maxReadingProgress,
       'coverImage': coverImage != null ? base64Encode(coverImage!) : null,
       'currentChapterIndex': currentChapterIndex,
       'scrollPosition': scrollPosition,
@@ -102,6 +108,7 @@ class Book {
       currentPage: map['currentPage'] as int? ?? 0,
       totalPages: map['totalPages'] as int? ?? 0,
       readingProgress: map['readingProgress'] as int? ?? 0,
+      maxReadingProgress: map['maxReadingProgress'] as int? ?? 0,
       coverImage: map['coverImage'] != null
           ? base64Decode(map['coverImage'] as String)
           : null,

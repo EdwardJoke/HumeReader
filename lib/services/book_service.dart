@@ -311,6 +311,18 @@ class BookService {
     await _prefs.setString(_statsKey, jsonEncode(stats.toMap()));
   }
 
+  /// Add reading time to total stats
+  Future<void> addReadingTime(int minutes) async {
+    if (minutes <= 0) return;
+    final stats = await getStats();
+    await updateStats(
+      stats.copyWith(
+        totalReadingTimeMinutes: stats.totalReadingTimeMinutes + minutes,
+        lastReadDate: DateTime.now(),
+      ),
+    );
+  }
+
   Future<void> _updateStatsBookCount() async {
     final books = await getBooks();
     final stats = await getStats();

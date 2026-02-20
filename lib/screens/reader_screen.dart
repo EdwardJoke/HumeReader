@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:hume/models/book.dart';
@@ -28,6 +30,11 @@ class _ReaderScreenState extends State<ReaderScreen>
   bool _isLoadingChapter = false;
   bool _isRestoringPosition = false;
 
+  // Reading time tracking
+  Timer? _readingTimer;
+  int _accumulatedMinutes = 0;
+  bool _isTrackingTime = false;
+
   static const double _lineHeight = 1.8;
 
   @override
@@ -44,17 +51,71 @@ class _ReaderScreenState extends State<ReaderScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
+      _pauseReadingTimer();
       _saveReadingPosition();
+    } else if (state == AppLifecycleState.resumed) {
+      _resumeReadingTimer();
     }
   }
 
   @override
   void dispose() {
+    _stopReadingTimer();
     _saveReadingPosition();
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.removeListener(_onScrollChanged);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  // ==================== Reading Time Tracking ====================
+
+  void _startReadingTimer() {
+    if (_isTrackingTime) return;
+    _isTrackingTime = true;
+
+    // Timer fires every 1 minute - efficient, minimal CPU usage
+    _readingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _accumulatedMinutes++;
+      _saveAccumulatedTime();
+    });
+  }
+
+  void _pauseReadingTimer() {
+    _readingTimer?.cancel();
+    _readingTimer = null;
+    _isTrackingTime = false;
+    // Save any remaining accumulated time
+    if (_accumulatedMinutes > 0) {
+      _saveAccumulatedTime();
+    }
+  }
+
+  void _resumeReadingTimer() {
+    _startReadingTimer();
+  }
+
+  void _stopReadingTimer() {
+    _readingTimer?.cancel();
+    _readingTimer = null;
+    _isTrackingTime = false;
+    // Save remaining time on exit
+    _saveAccumulatedTime();
+  }
+
+  Future<void> _saveAccumulatedTime() async {
+    if (_accumulatedMinutes <= 0) return;
+
+    final minutesToSave = _accumulatedMinutes;
+    _accumulatedMinutes = 0;
+
+    try {
+      await _bookService.addReadingTime(minutesToSave);
+    } catch (e) {
+      debugPrint('Error saving reading time: $e');
+      // Restore accumulated time if save failed
+      _accumulatedMinutes += minutesToSave;
+    }
   }
 
   void _onScrollChanged() {
@@ -96,6 +157,8 @@ class _ReaderScreenState extends State<ReaderScreen>
 
         // Restore scroll position after content loads
         _restoreScrollPosition();
+        // Start tracking reading time
+        _startReadingTimer();
         return _content;
       }
     }
@@ -105,6 +168,8 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     // Restore scroll position for TXT files
     _restoreScrollPosition();
+    // Start tracking reading time
+    _startReadingTimer();
     return content;
   }
 

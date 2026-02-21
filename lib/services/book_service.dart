@@ -7,6 +7,7 @@ import 'package:hume/models/book.dart';
 import 'package:hume/models/book_chapter.dart';
 import 'package:hume/models/reading_stats.dart';
 import 'package:hume/models/shelf.dart';
+import 'package:hume/services/mobi_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -52,7 +53,7 @@ class BookService {
       final fileName = file.path.split('/').last;
       final extension = fileName.split('.').last.toLowerCase();
 
-      if (extension != 'txt' && extension != 'epub') {
+      if (extension != 'txt' && extension != 'epub' && extension != 'mobi') {
         return null;
       }
 
@@ -78,6 +79,15 @@ class BookService {
 
         if (epubBook.CoverImage != null) {
           coverImage = epubBook.CoverImage!.getBytes();
+        }
+      } else if (extension == 'mobi') {
+        final bytes = await file.readAsBytes();
+        final mobiData = await MobiService.parse(bytes);
+
+        if (mobiData != null) {
+          bookTitle = mobiData.title.isNotEmpty ? mobiData.title : title;
+          author = mobiData.author;
+          coverImage = mobiData.coverImage;
         }
       }
 
@@ -155,6 +165,10 @@ class BookService {
       return getEpubFullContent(book);
     }
 
+    if (book.format == 'mobi') {
+      return getMobiFullContent(book);
+    }
+
     try {
       return await file.readAsString();
     } catch (e) {
@@ -229,6 +243,21 @@ class BookService {
     }
 
     return chapters;
+  }
+
+  Future<String> getMobiFullContent(Book book) async {
+    final chapters = await getMobiChapters(book);
+    return chapters.map((c) => c.content).join('\n\n');
+  }
+
+  Future<List<BookChapter>> getMobiChapters(Book book) async {
+    final file = File(book.filePath);
+    if (!await file.exists()) {
+      throw Exception('Book file not found');
+    }
+
+    final bytes = await file.readAsBytes();
+    return MobiService.extractChapters(bytes);
   }
 
   String _cleanHtml(String html) {
@@ -358,9 +387,12 @@ class BookService {
     int progress = book.readingProgress;
 
     if (book.format == 'epub' && chapterIndex != null) {
-      // For EPUB, we estimate progress based on chapters
-      // Get total chapters to calculate percentage
       final chapters = await getEpubChapters(book);
+      if (chapters.isNotEmpty) {
+        progress = ((chapterIndex / chapters.length) * 100).round();
+      }
+    } else if (book.format == 'mobi' && chapterIndex != null) {
+      final chapters = await getMobiChapters(book);
       if (chapters.isNotEmpty) {
         progress = ((chapterIndex / chapters.length) * 100).round();
       }

@@ -89,6 +89,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.8"
+  dart_mobi:
+    dependency: "direct main"
+    description:
+      name: dart_mobi
+      sha256: "509673f2b7156ddbb4b9a8797c06de09b01367d1d075436cf091d88d15c67bcd"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
   epubx:
     dependency: "direct main"
     description:

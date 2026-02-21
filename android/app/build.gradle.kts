@@ -39,6 +39,11 @@ android {
     }
 }
 
+dependencies {
+    // AndroidX Core for WindowCompat and WindowInsetsControllerCompat
+    implementation("androidx.core:core:1.15.0")
+}
+
 flutter {
     source = "../.."
 }

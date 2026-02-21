@@ -49,7 +49,7 @@ A cross-platform ebook reader built with Flutter. Read EPUB and TXT files with a
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/EdwardJoke/HumeReader.git
 cd hume
 ```
 

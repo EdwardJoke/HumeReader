@@ -57,6 +57,9 @@ dependencies:
   # URL launching (open links in browser)
   url_launcher: ^6.3.1
 
+  # Window management for desktop platforms
+  window_manager: ^0.4.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

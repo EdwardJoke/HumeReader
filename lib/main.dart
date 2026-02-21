@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hume/providers.dart';
 import 'package:hume/screens/home_screen.dart';
+import 'package:hume/services/fullscreen_service.dart';
 import 'package:hume/theme/app_theme.dart';
 import 'package:hume/utils/platform_utils.dart';
 
@@ -11,11 +12,16 @@ void main() async {
 
   // Enable full-screen mode on mobile devices
   if (PlatformUtils.isMobile) {
-    // Hide system UI (status bar and navigation bar) in immersive sticky mode
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: [],
-    );
+    // Use native Android 14+ fullscreen API for Android
+    if (PlatformUtils.isAndroid) {
+      await FullscreenService.enterFullscreen();
+    } else {
+      // Fallback for iOS using SystemChrome
+      await SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.immersiveSticky,
+        overlays: [],
+      );
+    }
     // Lock orientation to portrait for consistent mobile experience
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,

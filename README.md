@@ -1,12 +1,12 @@
 # Hume
 
-A cross-platform ebook reader built with Flutter. Read EPUB, MOBI, and TXT files with a beautiful reading experience, track your reading habits, and organize your library.
+A cross-platform ebook reader built with Flutter. Read EPUB, MOBI (KF7/KF8), AZW, AZW3, and TXT files with a beautiful reading experience, track your reading habits, and organize your library.
 
 ## Features
 
 ### Library Management
 - Import and organize your ebook collection
-- Support for **EPUB**, **MOBI**, and **TXT** formats
+- Support for **EPUB**, **MOBI** (KF7/KF8), **AZW**, **AZW3**, and **TXT** formats
 - Create custom shelves to organize books
 - Book cover display
 - Search and filter your library

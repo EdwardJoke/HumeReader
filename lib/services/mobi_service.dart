@@ -32,55 +32,206 @@ class MobiService {
 }
 
 class MobiBookData {
-  final dynamic _mobiData;
+  final MobiData _mobiData;
 
   MobiBookData(this._mobiData);
 
   String get title {
     try {
-      final fullName = _mobiData.pdbHeader?.fullName;
-      if (fullName != null && fullName.isNotEmpty) {
-        return fullName;
+      String? rawTitle;
+
+      final pdbName = _mobiData.pdbHeader?.name;
+      if (pdbName != null && pdbName.isNotEmpty) {
+        rawTitle = pdbName.trim();
+      }
+
+      if (rawTitle == null || rawTitle.isEmpty) {
+        final fullname = _mobiData.mobiHeader?.fullname;
+        if (fullname != null && fullname.isNotEmpty) {
+          rawTitle = fullname;
+        }
+      }
+
+      if (rawTitle == null || rawTitle.isEmpty) {
+        final exthTitle = _getExthData(503);
+        if (exthTitle != null && exthTitle.isNotEmpty) {
+          rawTitle = exthTitle;
+        }
+      }
+
+      if (rawTitle != null && rawTitle.isNotEmpty) {
+        return _cleanTitle(rawTitle);
       }
     } catch (_) {}
     return 'Untitled';
   }
 
+  String _cleanTitle(String title) {
+    var cleaned = title
+        .replaceAll('\x00', '')
+        .replaceAll('_', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    final garbagePatterns = [
+      RegExp(r'\s*[A-Za-z0-9]{20,}\s*$', caseSensitive: false),
+      RegExp(r'\s*code\s*$', caseSensitive: true),
+      RegExp(r'\s*\{.*\}\s*$', caseSensitive: false),
+      RegExp(r'\s*\\x[0-9a-fA-F]+\s*$', caseSensitive: false),
+    ];
+
+    for (final pattern in garbagePatterns) {
+      cleaned = cleaned.replaceAll(pattern, '');
+    }
+
+    return cleaned.trim();
+  }
+
   String get author {
     try {
-      final exth = _mobiData.exth;
-      if (exth != null) {
-        final authorRecord = exth.records?.firstWhere(
-          (r) => r.type == 100,
-          orElse: () => null,
-        );
-        if (authorRecord != null) {
-          return utf8.decode(List<int>.from(authorRecord.data ?? []));
-        }
+      final author = _getExthData(100);
+      if (author != null && author.isNotEmpty) {
+        return author;
       }
     } catch (_) {}
     return 'Unknown Author';
   }
 
-  String get textContent {
-    try {
-      final rawml = _mobiData.parseOpt(true, true, false);
-      if (rawml?.markup?.data != null) {
-        final htmlContent = utf8.decode(List<int>.from(rawml.markup.data));
-        return _htmlToPlainText(htmlContent);
+  String? _getExthData(int tag) {
+    var exth = _mobiData.mobiExthHeader;
+    while (exth != null) {
+      if (exth.tag == tag && exth.data != null) {
+        return utf8.decode(exth.data!);
       }
-    } catch (_) {}
-    return '';
+      exth = exth.next;
+    }
+    return null;
+  }
+
+  String get textContent {
+    final html = htmlContent;
+    if (html.isEmpty) return '';
+    return _htmlToPlainText(html);
   }
 
   String get htmlContent {
     try {
       final rawml = _mobiData.parseOpt(true, true, false);
-      if (rawml?.markup?.data != null) {
-        return utf8.decode(List<int>.from(rawml.markup.data));
+      final data = rawml.markup?.data;
+      if (data != null) {
+        return utf8.decode(data);
       }
     } catch (_) {}
+
+    return _extractContentDirectly();
+  }
+
+  String _extractContentDirectly() {
+    try {
+      final record0 = _mobiData.record0header;
+      if (record0 == null) return '';
+
+      final compressionType = record0.compressionType ?? 1;
+      final textRecordCount = record0.textRecordCount ?? 0;
+
+      if (textRecordCount == 0) return '';
+
+      final allContent = <int>[];
+      var record = _mobiData.mobiPdbRecord;
+
+      if (record == null) return '';
+
+      record = record.next;
+
+      for (int i = 0; i < textRecordCount && record != null; i++) {
+        if (record.data != null && record.data!.isNotEmpty) {
+          if (compressionType == 2) {
+            final decompressed = _decompressPalmDoc(record.data!);
+            allContent.addAll(decompressed);
+          } else if (compressionType == 1) {
+            allContent.addAll(record.data!);
+          }
+        }
+        record = record.next;
+      }
+
+      if (allContent.isNotEmpty) {
+        try {
+          return utf8.decode(allContent);
+        } catch (e) {
+          final stringBuffer = StringBuffer();
+          for (int i = 0; i < allContent.length; i++) {
+            final byte = allContent[i];
+            if (byte >= 32 && byte < 127) {
+              stringBuffer.writeCharCode(byte);
+            } else if (byte == 10 || byte == 13) {
+              stringBuffer.writeCharCode(byte);
+            } else {
+              stringBuffer.write(' ');
+            }
+          }
+          return stringBuffer.toString();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error extracting content directly: $e');
+    }
     return '';
+  }
+
+  List<int> _decompressPalmDoc(Uint8List data) {
+    final output = <int>[];
+    int i = 0;
+
+    while (i < data.length) {
+      final byte = data[i++];
+
+      if (byte == 0x00) {
+        // Literal character
+        output.add(byte);
+      } else if (byte >= 0x01 && byte <= 0x08) {
+        // Copy next N bytes literally (1-8)
+        final count = byte;
+        for (int j = 0; j < count && i < data.length; j++) {
+          output.add(data[i++]);
+        }
+      } else if (byte >= 0x09 && byte <= 0x7F) {
+        // Literal character
+        output.add(byte);
+      } else if (byte >= 0x80 && byte <= 0xBF) {
+        // Length-distance pair (Type B command)
+        if (i >= data.length) break;
+        final nextByte = data[i++];
+
+        // Combine the two bytes: 16 bits total
+        // Format: 10xxxxxx xxxxxxxx
+        //   - First 2 bits (10) are discarded
+        //   - Next 11 bits = distance (offset from end of uncompressed)
+        //   - Last 3 bits = length - 3
+        final combined = (byte << 8) | nextByte;
+
+        // Distance: bits 3-13 (11 bits) - no +1 needed
+        final distance = ((combined >> 3) & 0x7FF);
+
+        // Length: bits 0-2 (3 bits), add 3
+        final length = (combined & 0x07) + 3;
+
+        // Copy 'length' bytes from 'distance' bytes back
+        for (int j = 0; j < length; j++) {
+          final srcIndex = output.length - distance;
+          if (srcIndex >= 0 && srcIndex < output.length) {
+            output.add(output[srcIndex]);
+          }
+        }
+      } else if (byte >= 0xC0 && byte <= 0xFF) {
+        // Space + character (Type C command)
+        // 0xC0 = space + (0x00 ^ 0x80), so space + 0x00 = "A"
+        output.add(0x20); // space
+        output.add(byte ^ 0x80);
+      }
+    }
+
+    return output;
   }
 
   List<BookChapter> get chapters {
@@ -150,15 +301,18 @@ class MobiBookData {
 
   Uint8List? get coverImage {
     try {
-      final coverOffset = _mobiData.mobiHeader?.coverOffset;
-      if (coverOffset != null && coverOffset >= 0) {
-        final records = _mobiData.pdbHeader?.records;
-        if (records != null && coverOffset < records.length) {
-          final record = records[coverOffset];
-          if (record.data != null) {
-            return Uint8List.fromList(List<int>.from(record.data));
-          }
+      final rawml = _mobiData.parseOpt(true, true, false);
+      var resource = rawml.resources;
+      while (resource != null) {
+        final fileType = resource.fileType;
+        if ((fileType == MobiFileType.jpg ||
+                fileType == MobiFileType.png ||
+                fileType == MobiFileType.gif ||
+                fileType == MobiFileType.bmp) &&
+            resource.data != null) {
+          return resource.data!;
         }
+        resource = resource.next;
       }
     } catch (_) {}
     return null;

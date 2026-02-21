@@ -53,7 +53,11 @@ class BookService {
       final fileName = file.path.split('/').last;
       final extension = fileName.split('.').last.toLowerCase();
 
-      if (extension != 'txt' && extension != 'epub' && extension != 'mobi') {
+      if (extension != 'txt' &&
+          extension != 'epub' &&
+          extension != 'mobi' &&
+          extension != 'azw' &&
+          extension != 'azw3') {
         return null;
       }
 
@@ -80,7 +84,7 @@ class BookService {
         if (epubBook.CoverImage != null) {
           coverImage = epubBook.CoverImage!.getBytes();
         }
-      } else if (extension == 'mobi') {
+      } else if (['mobi', 'azw', 'azw3'].contains(extension)) {
         final bytes = await file.readAsBytes();
         final mobiData = await MobiService.parse(bytes);
 
@@ -165,7 +169,7 @@ class BookService {
       return getEpubFullContent(book);
     }
 
-    if (book.format == 'mobi') {
+    if (['mobi', 'azw', 'azw3'].contains(book.format)) {
       return getMobiFullContent(book);
     }
 
@@ -391,7 +395,8 @@ class BookService {
       if (chapters.isNotEmpty) {
         progress = ((chapterIndex / chapters.length) * 100).round();
       }
-    } else if (book.format == 'mobi' && chapterIndex != null) {
+    } else if (['mobi', 'azw', 'azw3'].contains(book.format) &&
+        chapterIndex != null) {
       final chapters = await getMobiChapters(book);
       if (chapters.isNotEmpty) {
         progress = ((chapterIndex / chapters.length) * 100).round();

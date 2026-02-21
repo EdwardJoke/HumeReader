@@ -1,4 +1,4 @@
-import 'dart:io' if (dart.library.html) 'dart:html';
+import 'platform_web.dart' if (dart.library.io) 'platform_io.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,9 +11,21 @@ class PlatformUtils {
   /// Returns true if the app is running on macOS.
   static bool get isMacOS => !kIsWeb && Platform.isMacOS;
 
+  /// Returns true if the app is running on Windows.
+  static bool get isWindows => !kIsWeb && Platform.isWindows;
+
+  /// Returns true if the app is running on Linux.
+  static bool get isLinux => !kIsWeb && Platform.isLinux;
+
   /// Returns true if the app is running on a desktop platform (macOS, Windows, Linux).
   static bool get isDesktop =>
       !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+  /// Returns true if the app is running on Android.
+  static bool get isAndroid => !kIsWeb && Platform.isAndroid;
+
+  /// Returns true if the app is running on iOS.
+  static bool get isIOS => !kIsWeb && Platform.isIOS;
 
   /// Returns true if the app is running on a mobile platform (Android, iOS).
   static bool get isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);

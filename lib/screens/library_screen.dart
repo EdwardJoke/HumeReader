@@ -33,6 +33,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _isLoading = false;
   bool _sidebarExtended = true;
   bool _isDragActive = false;
+  bool _isImporting = false;
+  double? _importProgress;
+  String _importStatusText = '';
 
   @override
   void initState() {
@@ -58,8 +61,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return _books.where((b) => _selectedShelf!.bookIds.contains(b.id)).toList();
   }
 
+  void _setImportProgress({required String statusText, double? progress}) {
+    if (!mounted) return;
+    setState(() {
+      _isImporting = true;
+      _importStatusText = statusText;
+      _importProgress = progress;
+    });
+  }
+
+  void _clearImportProgress() {
+    if (!mounted) return;
+    setState(() {
+      _isImporting = false;
+      _importProgress = null;
+      _importStatusText = '';
+    });
+  }
+
   Future<void> _importBook() async {
+    if (_isImporting) return;
+
     try {
+      _setImportProgress(statusText: 'Selecting file...');
       final useAndroidAnyPicker = PlatformUtils.isAndroid;
       final result = await FilePicker.platform.pickFiles(
         type: useAndroidAnyPicker ? FileType.any : FileType.custom,
@@ -82,6 +106,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
           return;
         }
 
+        _setImportProgress(
+          statusText: 'Importing and caching ${pickedFile.name}...',
+        );
         final service = await _bookServiceFuture;
         Book? book;
 
@@ -105,6 +132,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           throw Exception('Import failed: file path is unavailable.');
         }
 
+        _setImportProgress(statusText: 'Updating library...');
         await _loadData();
 
         // Show permission tip on macOS if import failed
@@ -120,6 +148,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
           operation: 'import book',
         );
       }
+    } finally {
+      _clearImportProgress();
     }
   }
 
@@ -136,45 +166,70 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _handleDroppedFiles(List<DropItem> files) async {
-    if (files.isEmpty) return;
+    if (files.isEmpty || _isImporting) return;
 
-    final service = await _bookServiceFuture;
-    var importedCount = 0;
-    var skippedCount = 0;
+    try {
+      final service = await _bookServiceFuture;
+      var importedCount = 0;
+      var skippedCount = 0;
+      var processedCount = 0;
+      final totalCount = files.length;
 
-    for (final file in files) {
-      if (!_isSupportedFileName(file.name)) {
-        skippedCount++;
-        continue;
-      }
+      _setImportProgress(
+        statusText: 'Importing and caching books... (0/$totalCount)',
+        progress: 0,
+      );
 
-      try {
-        final bytes = await file.readAsBytes();
-        final book = await service.importBookBytes(bytes, file.name);
-        if (book != null) {
-          importedCount++;
-        } else {
+      for (final file in files) {
+        if (!_isSupportedFileName(file.name)) {
+          skippedCount++;
+          processedCount++;
+          _setImportProgress(
+            statusText:
+                'Importing and caching books... ($processedCount/$totalCount)',
+            progress: processedCount / totalCount,
+          );
+          continue;
+        }
+
+        try {
+          final bytes = await file.readAsBytes();
+          final book = await service.importBookBytes(bytes, file.name);
+          if (book != null) {
+            importedCount++;
+          } else {
+            skippedCount++;
+          }
+        } catch (_) {
           skippedCount++;
         }
-      } catch (_) {
-        skippedCount++;
+
+        processedCount++;
+        _setImportProgress(
+          statusText:
+              'Importing and caching books... ($processedCount/$totalCount)',
+          progress: processedCount / totalCount,
+        );
       }
+
+      if (importedCount > 0) {
+        _setImportProgress(statusText: 'Updating library...');
+        await _loadData();
+      }
+
+      if (!mounted) return;
+
+      final message = importedCount > 0
+          ? skippedCount > 0
+                ? 'Imported $importedCount file(s). Skipped $skippedCount unsupported/failed file(s).'
+                : 'Imported $importedCount file(s).'
+          : 'No supported books were imported.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      _clearImportProgress();
     }
-
-    if (importedCount > 0) {
-      await _loadData();
-    }
-
-    if (!mounted) return;
-
-    final message = importedCount > 0
-        ? skippedCount > 0
-              ? 'Imported $importedCount file(s). Skipped $skippedCount unsupported/failed file(s).'
-              : 'Imported $importedCount file(s).'
-        : 'No supported books were imported.';
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildDropTarget(Widget child) {
@@ -412,7 +467,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               child: _SidebarButton(
                 icon: Icons.add_rounded,
                 label: 'Import',
-                onPressed: _importBook,
+                onPressed: _isImporting ? null : _importBook,
                 isExtended: _sidebarExtended,
                 isPrimary: true,
               ),
@@ -618,6 +673,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_selectedShelf?.name ?? 'My Library'),
+        bottom: _isImporting
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(36),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Column(
+                    children: [
+                      LinearProgressIndicator(value: _importProgress),
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _importStatusText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : null,
         actions: [
           if (_selectedShelf != null)
             IconButton(
@@ -693,7 +771,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 class _SidebarButton extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool isExtended;
   final bool isPrimary;
 
@@ -708,44 +786,48 @@ class _SidebarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final disabledOpacity = onPressed == null ? 0.5 : 1.0;
 
     if (isExtended) {
-      return Material(
-        color: isPrimary
-            ? colorScheme.primaryContainer
-            : colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onPressed,
+      return Opacity(
+        opacity: disabledOpacity,
+        child: Material(
+          color: isPrimary
+              ? colorScheme.primaryContainer
+              : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            height: 44,
-            child: Row(
-              mainAxisSize: MainAxisSize.max,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  size: 20,
-                  color: isPrimary
-                      ? colorScheme.onPrimaryContainer
-                      : colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isPrimary
-                          ? colorScheme.onPrimaryContainer
-                          : colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 14,
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              height: 44,
+              child: Row(
+                mainAxisSize: MainAxisSize.max,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 20,
+                    color: isPrimary
+                        ? colorScheme.onPrimaryContainer
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isPrimary
+                            ? colorScheme.onPrimaryContainer
+                            : colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -753,27 +835,30 @@ class _SidebarButton extends StatelessWidget {
     }
 
     // Collapsed state
-    return Tooltip(
-      message: label,
-      preferBelow: false,
-      child: Material(
-        color: isPrimary
-            ? colorScheme.primaryContainer
-            : colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onPressed,
+    return Opacity(
+      opacity: disabledOpacity,
+      child: Tooltip(
+        message: label,
+        preferBelow: false,
+        child: Material(
+          color: isPrimary
+              ? colorScheme.primaryContainer
+              : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            width: 48,
-            height: 44,
-            child: Center(
-              child: Icon(
-                icon,
-                size: 20,
-                color: isPrimary
-                    ? colorScheme.onPrimaryContainer
-                    : colorScheme.onSurfaceVariant,
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              width: 48,
+              height: 44,
+              child: Center(
+                child: Icon(
+                  icon,
+                  size: 20,
+                  color: isPrimary
+                      ? colorScheme.onPrimaryContainer
+                      : colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),

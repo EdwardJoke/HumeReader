@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hume/models/book.dart';
@@ -17,12 +18,21 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
+  static const List<String> _supportedExtensions = [
+    'txt',
+    'epub',
+    'mobi',
+    'azw',
+    'azw3',
+  ];
+
   late Future<BookService> _bookServiceFuture;
   List<Book> _books = [];
   List<Shelf> _shelves = [];
   Shelf? _selectedShelf;
   bool _isLoading = false;
   bool _sidebarExtended = true;
+  bool _isDragActive = false;
 
   @override
   void initState() {
@@ -52,7 +62,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['txt', 'epub', 'mobi', 'azw', 'azw3'],
+        allowedExtensions: _supportedExtensions,
         withData: PlatformUtils.isWeb,
       );
 
@@ -65,6 +75,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
           if (pickedFile.bytes == null) {
             throw Exception('Web import failed: no file bytes available.');
           }
+          book = await service.importBookBytes(
+            pickedFile.bytes!,
+            pickedFile.name,
+          );
+        } else if (pickedFile.bytes != null) {
           book = await service.importBookBytes(
             pickedFile.bytes!,
             pickedFile.name,
@@ -92,6 +107,112 @@ class _LibraryScreenState extends State<LibraryScreen> {
         );
       }
     }
+  }
+
+  bool get _supportsDragAndDrop =>
+      PlatformUtils.isWeb || PlatformUtils.isDesktop;
+
+  bool _isSupportedFileName(String fileName) {
+    final lastDot = fileName.lastIndexOf('.');
+    if (lastDot <= 0 || lastDot >= fileName.length - 1) {
+      return false;
+    }
+    final extension = fileName.substring(lastDot + 1).toLowerCase();
+    return _supportedExtensions.contains(extension);
+  }
+
+  Future<void> _handleDroppedFiles(List<DropItem> files) async {
+    if (files.isEmpty) return;
+
+    final service = await _bookServiceFuture;
+    var importedCount = 0;
+    var skippedCount = 0;
+
+    for (final file in files) {
+      if (!_isSupportedFileName(file.name)) {
+        skippedCount++;
+        continue;
+      }
+
+      try {
+        final bytes = await file.readAsBytes();
+        final book = await service.importBookBytes(bytes, file.name);
+        if (book != null) {
+          importedCount++;
+        } else {
+          skippedCount++;
+        }
+      } catch (_) {
+        skippedCount++;
+      }
+    }
+
+    if (importedCount > 0) {
+      await _loadData();
+    }
+
+    if (!mounted) return;
+
+    final message = importedCount > 0
+        ? skippedCount > 0
+              ? 'Imported $importedCount file(s). Skipped $skippedCount unsupported/failed file(s).'
+              : 'Imported $importedCount file(s).'
+        : 'No supported books were imported.';
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Widget _buildDropTarget(Widget child) {
+    if (!_supportsDragAndDrop) return child;
+
+    final colorScheme = Theme.of(context).colorScheme;
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _isDragActive = true),
+      onDragExited: (_) => setState(() => _isDragActive = false),
+      onDragDone: (detail) async {
+        if (_isDragActive) {
+          setState(() => _isDragActive = false);
+        }
+        await _handleDroppedFiles(detail.files);
+      },
+      child: Stack(
+        children: [
+          Positioned.fill(child: child),
+          if (_isDragActive)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withValues(alpha: 0.10),
+                    border: Border.all(color: colorScheme.primary, width: 2),
+                  ),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surface,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'Drop ebook files to import',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _createShelf() async {
@@ -492,7 +613,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
         ],
       ),
-      body: _buildBody(),
+      body: _buildDropTarget(_buildBody()),
     );
   }
 

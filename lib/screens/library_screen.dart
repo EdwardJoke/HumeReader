@@ -40,6 +40,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   void initState() {
     super.initState();
+    _sidebarExtended = !PlatformUtils.isMobile;
     _bookServiceFuture = BookService.create();
     _loadData();
   }

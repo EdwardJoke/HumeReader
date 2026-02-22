@@ -199,7 +199,7 @@ void main() {
 
         expect(mobiData, isNotNull);
         final html = mobiData!.htmlContent;
-        final text = mobiData!.textContent;
+        final text = mobiData.textContent;
 
         // The book should have substantial content
         // HTML should be larger than plain text due to tags

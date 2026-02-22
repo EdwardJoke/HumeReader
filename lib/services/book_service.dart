@@ -23,7 +23,6 @@ class FilePermissionException implements Exception {
   String toString() => 'FilePermissionException: $message';
 }
 
-
 class BookService {
   static const String _booksKey = 'books';
   static const String _statsKey = 'reading_stats';
@@ -77,7 +76,7 @@ class BookService {
     try {
       final cacheFile = await _getChapterCacheFile(book);
       if (!await cacheFile.exists()) return null;
-      
+
       final jsonData = await cacheFile.readAsString();
       final List<dynamic> decoded = jsonDecode(jsonData) as List<dynamic>;
       return decoded
@@ -143,10 +142,36 @@ class BookService {
     }
   }
 
-
   Future<Book?> importBook(File file) async {
     try {
       final fileName = file.path.split('/').last;
+      final bytes = await file.readAsBytes();
+      final fileSize = await file.length();
+      return _importBookFromBytes(
+        bytes: bytes,
+        fileName: fileName,
+        fileSize: fileSize,
+      );
+    } catch (e) {
+      debugPrint('Error importing book: $e');
+      return null;
+    }
+  }
+
+  Future<Book?> importBookBytes(Uint8List bytes, String fileName) async {
+    return _importBookFromBytes(
+      bytes: bytes,
+      fileName: fileName,
+      fileSize: bytes.length,
+    );
+  }
+
+  Future<Book?> _importBookFromBytes({
+    required Uint8List bytes,
+    required String fileName,
+    required int fileSize,
+  }) async {
+    try {
       final extension = fileName.split('.').last.toLowerCase();
 
       if (extension != 'txt' &&
@@ -158,18 +183,16 @@ class BookService {
       }
 
       final title = fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
-      final fileSize = await file.length();
       final booksDir = await _getBooksDirectory();
       final newFileName = '${_uuid.v4()}.$extension';
       final newFile = File('${booksDir.path}/$newFileName');
-      await file.copy(newFile.path);
+      await newFile.writeAsBytes(bytes);
 
       String? bookTitle = title;
       String? author;
       Uint8List? coverImage;
 
       if (extension == 'epub') {
-        final bytes = await file.readAsBytes();
         final epubBook = await EpubReader.readBook(bytes);
 
         bookTitle = epubBook.Title?.isNotEmpty == true
@@ -181,7 +204,6 @@ class BookService {
           coverImage = epubBook.CoverImage!.getBytes();
         }
       } else if (['mobi', 'azw', 'azw3'].contains(extension)) {
-        final bytes = await file.readAsBytes();
         final mobiData = await MobiService.parse(bytes);
 
         if (mobiData != null) {
@@ -210,7 +232,10 @@ class BookService {
       }
 
       final finalBook = coverFilePath != null
-          ? book.copyWith(coverImageFilePath: coverFilePath, clearCoverImage: true)
+          ? book.copyWith(
+              coverImageFilePath: coverFilePath,
+              clearCoverImage: true,
+            )
           : book;
 
       await _saveBook(finalBook);
@@ -258,6 +283,22 @@ class BookService {
       _booksKey,
       jsonEncode(books.map((b) => b.toMap()).toList()),
     );
+
+    final shelves = await getShelves();
+    bool shelvesChanged = false;
+    final updatedShelves = shelves.map((shelf) {
+      if (!shelf.bookIds.contains(bookId)) return shelf;
+      shelvesChanged = true;
+      final updatedBookIds = shelf.bookIds.where((id) => id != bookId).toList();
+      return shelf.copyWith(bookIds: updatedBookIds);
+    }).toList();
+    if (shelvesChanged) {
+      await _prefs.setString(
+        _shelvesKey,
+        jsonEncode(updatedShelves.map((s) => s.toMap()).toList()),
+      );
+    }
+
     await _updateStatsBookCount();
   }
 
@@ -338,7 +379,7 @@ class BookService {
     if (cachedChapters != null) {
       return cachedChapters;
     }
-    
+
     // Cache miss - parse the file
     final file = File(book.filePath);
     if (!await file.exists()) {
@@ -396,7 +437,7 @@ class BookService {
 
     // Cache the parsed chapters for future access
     await _cacheChapters(book, chapters);
-    
+
     return chapters;
   }
 
@@ -414,7 +455,7 @@ class BookService {
     if (cachedChapters != null) {
       return cachedChapters;
     }
-    
+
     // Cache miss - parse the file
     final file = File(book.filePath);
     if (!await file.exists()) {
@@ -423,10 +464,10 @@ class BookService {
 
     final bytes = await file.readAsBytes();
     final chapters = await MobiService.extractChapters(bytes);
-    
+
     // Cache the parsed chapters for future access
     await _cacheChapters(book, chapters);
-    
+
     return chapters;
   }
 
@@ -514,10 +555,10 @@ class BookService {
   Future<void> addReadingTime(int minutes) async {
     if (minutes <= 0) return;
     final stats = await getStats();
+    final updatedStreakStats = _updateStreaks(stats, DateTime.now());
     await updateStats(
-      stats.copyWith(
+      updatedStreakStats.copyWith(
         totalReadingTimeMinutes: stats.totalReadingTimeMinutes + minutes,
-        lastReadDate: DateTime.now(),
       ),
     );
   }
@@ -553,34 +594,39 @@ class BookService {
     int? currentPage,
     int? totalPages,
   }) async {
-    // Calculate progress based on EPUB chapters or TXT pages
-    int progress = book.readingProgress;
+    final books = await getBooks();
+    final currentIndex = books.indexWhere((b) => b.id == book.id);
+    final currentBook = currentIndex >= 0 ? books[currentIndex] : book;
 
-    if (book.format == 'epub' && chapterIndex != null) {
-      final chapters = await getEpubChapters(book);
+    // Calculate progress based on EPUB chapters or TXT pages
+    int progress = currentBook.readingProgress;
+
+    if (currentBook.format == 'epub' && chapterIndex != null) {
+      final chapters = await getEpubChapters(currentBook);
       if (chapters.isNotEmpty) {
-        progress = ((chapterIndex / chapters.length) * 100).round();
+        progress = (((chapterIndex + 1) / chapters.length) * 100).round();
       }
-    } else if (['mobi', 'azw', 'azw3'].contains(book.format) &&
+    } else if (['mobi', 'azw', 'azw3'].contains(currentBook.format) &&
         chapterIndex != null) {
-      final chapters = await getMobiChapters(book);
+      final chapters = await getMobiChapters(currentBook);
       if (chapters.isNotEmpty) {
-        progress = ((chapterIndex / chapters.length) * 100).round();
+        progress = (((chapterIndex + 1) / chapters.length) * 100).round();
       }
     } else if (currentPage != null && totalPages != null && totalPages > 0) {
       progress = ((currentPage / totalPages) * 100).round();
     }
+    progress = progress.clamp(0, 100).toInt();
 
     // Only update max progress if new progress is higher (never decreases)
-    final maxProgress = progress > book.maxReadingProgress
+    final maxProgress = progress > currentBook.maxReadingProgress
         ? progress
-        : book.maxReadingProgress;
+        : currentBook.maxReadingProgress;
 
-    final updatedBook = book.copyWith(
-      currentChapterIndex: chapterIndex ?? book.currentChapterIndex,
-      scrollPosition: scrollPosition ?? book.scrollPosition,
-      currentPage: currentPage ?? book.currentPage,
-      totalPages: totalPages ?? book.totalPages,
+    final updatedBook = currentBook.copyWith(
+      currentChapterIndex: chapterIndex ?? currentBook.currentChapterIndex,
+      scrollPosition: scrollPosition ?? currentBook.scrollPosition,
+      currentPage: currentPage ?? currentBook.currentPage,
+      totalPages: totalPages ?? currentBook.totalPages,
       readingProgress: progress,
       maxReadingProgress: maxProgress,
       lastReadAt: DateTime.now(),
@@ -602,11 +648,46 @@ class BookService {
     );
 
     final stats = await getStats();
+    final updatedStreakStats = _updateStreaks(stats, DateTime.now());
     await updateStats(
-      stats.copyWith(
-        totalPagesRead: stats.totalPagesRead + 1,
-        lastReadDate: DateTime.now(),
-      ),
+      updatedStreakStats.copyWith(totalPagesRead: stats.totalPagesRead + 1),
+    );
+  }
+
+  ReadingStats _updateStreaks(ReadingStats stats, DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    final last = stats.lastReadDate;
+    if (last == null) {
+      return stats.copyWith(
+        currentStreak: 1,
+        longestStreak: stats.longestStreak < 1 ? 1 : stats.longestStreak,
+        lastReadDate: now,
+      );
+    }
+
+    final lastDay = DateTime(last.year, last.month, last.day);
+    final dayDiff = today.difference(lastDay).inDays;
+
+    if (dayDiff <= 0) {
+      return stats.copyWith(lastReadDate: now);
+    }
+
+    if (dayDiff == 1) {
+      final currentStreak = stats.currentStreak + 1;
+      final longestStreak = currentStreak > stats.longestStreak
+          ? currentStreak
+          : stats.longestStreak;
+      return stats.copyWith(
+        currentStreak: currentStreak,
+        longestStreak: longestStreak,
+        lastReadDate: now,
+      );
+    }
+
+    return stats.copyWith(
+      currentStreak: 1,
+      longestStreak: stats.longestStreak < 1 ? 1 : stats.longestStreak,
+      lastReadDate: now,
     );
   }
 

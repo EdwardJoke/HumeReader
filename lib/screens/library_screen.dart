@@ -53,12 +53,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['txt', 'epub', 'mobi', 'azw', 'azw3'],
+        withData: PlatformUtils.isWeb,
       );
 
-      if (result != null && result.files.single.path != null) {
-        final file = File(result.files.single.path!);
+      if (result != null) {
+        final pickedFile = result.files.single;
         final service = await _bookServiceFuture;
-        final book = await service.importBook(file);
+        Book? book;
+
+        if (PlatformUtils.isWeb) {
+          if (pickedFile.bytes == null) {
+            throw Exception('Web import failed: no file bytes available.');
+          }
+          book = await service.importBookBytes(
+            pickedFile.bytes!,
+            pickedFile.name,
+          );
+        } else if (pickedFile.path != null) {
+          final file = File(pickedFile.path!);
+          book = await service.importBook(file);
+        } else {
+          throw Exception('Import failed: file path is unavailable.');
+        }
+
         await _loadData();
 
         // Show permission tip on macOS if import failed

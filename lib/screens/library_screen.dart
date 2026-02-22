@@ -403,9 +403,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 _buildSectionDivider(),
                 const SizedBox(height: 4),
               ],
-              // User Shelves
-              ..._shelves.map(
-                (shelf) => _SidebarTile(
+              // User Shelves with keys for efficient updates
+              for (final shelf in _shelves)
+                _SidebarTile(
+                  key: ValueKey(shelf.id),
                   icon: Icons.folder_outlined,
                   selectedIcon: Icons.folder_rounded,
                   label: shelf.name,
@@ -415,7 +416,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   onDelete: () => _deleteShelf(shelf),
                   isExtended: true,
                 ),
-              ),
             ],
           ),
         ),
@@ -435,8 +435,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
           onTap: () => setState(() => _selectedShelf = null),
           isExtended: false,
         ),
-        ..._shelves.map(
-          (shelf) => _SidebarTile(
+        for (final shelf in _shelves)
+          _SidebarTile(
+            key: ValueKey(shelf.id),
             icon: Icons.folder_outlined,
             selectedIcon: Icons.folder_rounded,
             label: shelf.name,
@@ -444,7 +445,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
             onTap: () => setState(() => _selectedShelf = shelf),
             isExtended: false,
           ),
-        ),
       ],
     );
   }
@@ -515,12 +515,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
       );
     }
 
+    // Estimate item height for performance optimization
+    // BookCard has ~120px height (padding + content)
+    const estimatedItemExtent = 128.0;
+
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: displayedBooks.length,
+      itemExtent: estimatedItemExtent,
       itemBuilder: (context, index) {
         final book = displayedBooks[index];
         return BookCard(
+          key: ValueKey(book.id),
           book: book,
           onTap: () => _openBook(book),
           onDelete: () => _deleteBook(book),
@@ -637,6 +643,7 @@ class _SidebarTile extends StatelessWidget {
   final bool isExtended;
 
   const _SidebarTile({
+    super.key,
     required this.icon,
     required this.selectedIcon,
     required this.label,

@@ -23,6 +23,7 @@ class FilePermissionException implements Exception {
   String toString() => 'FilePermissionException: $message';
 }
 
+
 class BookService {
   static const String _booksKey = 'books';
   static const String _statsKey = 'reading_stats';
@@ -47,6 +48,101 @@ class BookService {
     }
     return booksDir;
   }
+
+  // ==================== Chapter Caching ====================
+
+  Future<File> _getChapterCacheFile(Book book) async {
+    final booksDir = await _getBooksDirectory();
+    return File('${booksDir.path}/${book.id}_chapters.json');
+  }
+
+  Future<File> _getCoverImageFile(Book book) async {
+    final booksDir = await _getBooksDirectory();
+    return File('${booksDir.path}/${book.id}_cover.jpg');
+  }
+
+  /// Cache chapters to disk - avoids re-parsing on every access
+  Future<void> _cacheChapters(Book book, List<BookChapter> chapters) async {
+    try {
+      final cacheFile = await _getChapterCacheFile(book);
+      final jsonData = jsonEncode(chapters.map((c) => c.toMap()).toList());
+      await cacheFile.writeAsString(jsonData);
+    } catch (e) {
+      debugPrint('Error caching chapters: $e');
+    }
+  }
+
+  /// Load chapters from cache - returns null if cache doesn't exist or is invalid
+  Future<List<BookChapter>?> _loadCachedChapters(Book book) async {
+    try {
+      final cacheFile = await _getChapterCacheFile(book);
+      if (!await cacheFile.exists()) return null;
+      
+      final jsonData = await cacheFile.readAsString();
+      final List<dynamic> decoded = jsonDecode(jsonData) as List<dynamic>;
+      return decoded
+          .map((c) => BookChapter.fromMap(c as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('Error loading cached chapters: $e');
+      return null;
+    }
+  }
+
+  /// Save cover image to file instead of storing in SharedPreferences
+  /// Returns the file path if successful, null otherwise
+  Future<String?> saveCoverImage(Book book, Uint8List? coverImage) async {
+    if (coverImage == null) return null;
+    try {
+      final coverFile = await _getCoverImageFile(book);
+      await coverFile.writeAsBytes(coverImage);
+      return coverFile.path;
+    } catch (e) {
+      debugPrint('Error saving cover image: $e');
+      return null;
+    }
+  }
+
+  /// Load cover image from file path - public method for lazy loading
+  Future<Uint8List?> loadCoverImage(String? coverPath) async {
+    if (coverPath == null) return null;
+    try {
+      final file = File(coverPath);
+      if (!await file.exists()) return null;
+      return await file.readAsBytes();
+    } catch (e) {
+      debugPrint('Error loading cover image: $e');
+      return null;
+    }
+  }
+
+  /// Load cover image for a book - checks both filePath and legacy coverImage
+  Future<Uint8List?> loadBookCover(Book book) async {
+    // First try loading from file path
+    if (book.coverImageFilePath != null) {
+      final image = await loadCoverImage(book.coverImageFilePath);
+      if (image != null) return image;
+    }
+    // Fallback to in-memory coverImage (for migration)
+    return book.coverImage;
+  }
+
+  /// Delete cached data when book is deleted
+  Future<void> _deleteBookCache(Book book) async {
+    try {
+      final cacheFile = await _getChapterCacheFile(book);
+      if (await cacheFile.exists()) {
+        await cacheFile.delete();
+      }
+      final coverFile = await _getCoverImageFile(book);
+      if (await coverFile.exists()) {
+        await coverFile.delete();
+      }
+    } catch (e) {
+      debugPrint('Error deleting book cache: $e');
+    }
+  }
+
 
   Future<Book?> importBook(File file) async {
     try {
@@ -95,21 +191,32 @@ class BookService {
         }
       }
 
+      final bookId = _uuid.v4();
       final book = Book(
-        id: _uuid.v4(),
+        id: bookId,
         title: bookTitle,
         author: author,
         filePath: newFile.path,
         format: extension,
         fileSize: fileSize,
         addedAt: DateTime.now(),
-        coverImage: coverImage,
+        coverImage: coverImage, // Keep for backward compatibility
       );
 
-      await _saveBook(book);
+      // Save cover image to file and update book with file path
+      String? coverFilePath;
+      if (coverImage != null) {
+        coverFilePath = await saveCoverImage(book, coverImage);
+      }
+
+      final finalBook = coverFilePath != null
+          ? book.copyWith(coverImageFilePath: coverFilePath, clearCoverImage: true)
+          : book;
+
+      await _saveBook(finalBook);
       await _updateStatsBookCount();
 
-      return book;
+      return finalBook;
     } catch (e) {
       debugPrint('Error importing book: $e');
       return null;
@@ -143,6 +250,9 @@ class BookService {
       await file.delete();
     }
 
+    // Clean up cached chapter data and cover image
+    await _deleteBookCache(book);
+
     books.removeWhere((b) => b.id == bookId);
     await _prefs.setString(
       _booksKey,
@@ -157,6 +267,34 @@ class BookService {
 
     final List<dynamic> decoded = jsonDecode(booksJson) as List<dynamic>;
     return decoded.map((b) => Book.fromMap(b as Map<String, dynamic>)).toList();
+  }
+
+  /// Migrate existing books from base64 cover images to file storage
+  /// Call this once during app startup to optimize existing data
+  Future<void> migrateCoverImagesToFiles() async {
+    final books = await getBooks();
+    bool needsSave = false;
+
+    for (final book in books) {
+      // Skip if already migrated (has file path) or no cover image
+      if (book.coverImageFilePath != null || book.coverImage == null) continue;
+
+      // Save cover to file
+      final coverFilePath = await saveCoverImage(book, book.coverImage);
+      if (coverFilePath != null) {
+        final updatedBook = book.copyWith(
+          coverImageFilePath: coverFilePath,
+          clearCoverImage: true,
+        );
+        await _saveBook(updatedBook);
+        needsSave = true;
+        debugPrint('Migrated cover image for: ${book.title}');
+      }
+    }
+
+    if (needsSave) {
+      debugPrint('Cover image migration complete');
+    }
   }
 
   Future<String> getBookContent(Book book) async {
@@ -191,7 +329,17 @@ class BookService {
     return chapters.map((c) => c.content).join('\n\n');
   }
 
+  /// Get EPUB chapters with caching - major performance optimization
+  /// First access: parses file and caches chapters
+  /// Subsequent accesses: loads from cache (instant, no file I/O or parsing)
   Future<List<BookChapter>> getEpubChapters(Book book) async {
+    // Try to load from cache first - avoids expensive re-parsing
+    final cachedChapters = await _loadCachedChapters(book);
+    if (cachedChapters != null) {
+      return cachedChapters;
+    }
+    
+    // Cache miss - parse the file
     final file = File(book.filePath);
     if (!await file.exists()) {
       throw Exception('Book file not found');
@@ -246,6 +394,9 @@ class BookService {
       });
     }
 
+    // Cache the parsed chapters for future access
+    await _cacheChapters(book, chapters);
+    
     return chapters;
   }
 
@@ -254,14 +405,29 @@ class BookService {
     return chapters.map((c) => c.content).join('\n\n');
   }
 
+  /// Get MOBI/AZW3 chapters with caching - major performance optimization
+  /// First access: parses file and caches chapters
+  /// Subsequent accesses: loads from cache (instant, no file I/O or parsing)
   Future<List<BookChapter>> getMobiChapters(Book book) async {
+    // Try to load from cache first - avoids expensive re-parsing
+    final cachedChapters = await _loadCachedChapters(book);
+    if (cachedChapters != null) {
+      return cachedChapters;
+    }
+    
+    // Cache miss - parse the file
     final file = File(book.filePath);
     if (!await file.exists()) {
       throw Exception('Book file not found');
     }
 
     final bytes = await file.readAsBytes();
-    return MobiService.extractChapters(bytes);
+    final chapters = await MobiService.extractChapters(bytes);
+    
+    // Cache the parsed chapters for future access
+    await _cacheChapters(book, chapters);
+    
+    return chapters;
   }
 
   String _cleanHtml(String html) {

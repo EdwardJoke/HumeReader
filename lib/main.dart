@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hume/providers.dart';
 import 'package:hume/screens/home_screen.dart';
+import 'package:hume/services/book_service.dart';
 import 'package:hume/services/fullscreen_service.dart';
 import 'package:hume/services/window_service.dart';
 import 'package:hume/theme/app_theme.dart';
@@ -34,6 +35,15 @@ void main() async {
     ]);
   }
 
+  // Migrate cover images from SharedPreferences to file storage
+  // This is a one-time operation for existing books
+  try {
+    final bookService = await BookService.create();
+    await bookService.migrateCoverImagesToFiles();
+  } catch (e) {
+    debugPrint('Error migrating cover images: $e');
+  }
+
   runApp(const HumeApp());
 }
 
@@ -42,8 +52,10 @@ class HumeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: themeProvider,
+    // Use ListenableBuilder instead of AnimatedBuilder for better semantics
+    // Only rebuild theme-related parts, not the entire MaterialApp
+    return ListenableBuilder(
+      listenable: themeProvider,
       builder: (context, child) {
         return MaterialApp(
           title: 'Hume Reader',

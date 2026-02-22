@@ -7,6 +7,7 @@ import 'package:hume/models/book.dart';
 import 'package:hume/models/book_chapter.dart';
 import 'package:hume/models/reading_stats.dart';
 import 'package:hume/models/shelf.dart';
+import 'package:hume/services/mobi_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -47,28 +48,151 @@ class BookService {
     return booksDir;
   }
 
+  // ==================== Chapter Caching ====================
+
+  Future<File> _getChapterCacheFile(Book book) async {
+    final booksDir = await _getBooksDirectory();
+    return File('${booksDir.path}/${book.id}_chapters.json');
+  }
+
+  Future<File> _getCoverImageFile(Book book) async {
+    final booksDir = await _getBooksDirectory();
+    return File('${booksDir.path}/${book.id}_cover.jpg');
+  }
+
+  /// Cache chapters to disk - avoids re-parsing on every access
+  Future<void> _cacheChapters(Book book, List<BookChapter> chapters) async {
+    try {
+      final cacheFile = await _getChapterCacheFile(book);
+      final jsonData = jsonEncode(chapters.map((c) => c.toMap()).toList());
+      await cacheFile.writeAsString(jsonData);
+    } catch (e) {
+      debugPrint('Error caching chapters: $e');
+    }
+  }
+
+  /// Load chapters from cache - returns null if cache doesn't exist or is invalid
+  Future<List<BookChapter>?> _loadCachedChapters(Book book) async {
+    try {
+      final cacheFile = await _getChapterCacheFile(book);
+      if (!await cacheFile.exists()) return null;
+
+      final jsonData = await cacheFile.readAsString();
+      final List<dynamic> decoded = jsonDecode(jsonData) as List<dynamic>;
+      return decoded
+          .map((c) => BookChapter.fromMap(c as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('Error loading cached chapters: $e');
+      return null;
+    }
+  }
+
+  /// Save cover image to file instead of storing in SharedPreferences
+  /// Returns the file path if successful, null otherwise
+  Future<String?> saveCoverImage(Book book, Uint8List? coverImage) async {
+    if (coverImage == null) return null;
+    try {
+      final coverFile = await _getCoverImageFile(book);
+      await coverFile.writeAsBytes(coverImage);
+      return coverFile.path;
+    } catch (e) {
+      debugPrint('Error saving cover image: $e');
+      return null;
+    }
+  }
+
+  /// Load cover image from file path - public method for lazy loading
+  Future<Uint8List?> loadCoverImage(String? coverPath) async {
+    if (coverPath == null) return null;
+    try {
+      final file = File(coverPath);
+      if (!await file.exists()) return null;
+      return await file.readAsBytes();
+    } catch (e) {
+      debugPrint('Error loading cover image: $e');
+      return null;
+    }
+  }
+
+  /// Load cover image for a book - checks both filePath and legacy coverImage
+  Future<Uint8List?> loadBookCover(Book book) async {
+    // First try loading from file path
+    if (book.coverImageFilePath != null) {
+      final image = await loadCoverImage(book.coverImageFilePath);
+      if (image != null) return image;
+    }
+    // Fallback to in-memory coverImage (for migration)
+    return book.coverImage;
+  }
+
+  /// Delete cached data when book is deleted
+  Future<void> _deleteBookCache(Book book) async {
+    try {
+      final cacheFile = await _getChapterCacheFile(book);
+      if (await cacheFile.exists()) {
+        await cacheFile.delete();
+      }
+      final coverFile = await _getCoverImageFile(book);
+      if (await coverFile.exists()) {
+        await coverFile.delete();
+      }
+    } catch (e) {
+      debugPrint('Error deleting book cache: $e');
+    }
+  }
+
   Future<Book?> importBook(File file) async {
     try {
       final fileName = file.path.split('/').last;
+      final bytes = await file.readAsBytes();
+      final fileSize = await file.length();
+      return _importBookFromBytes(
+        bytes: bytes,
+        fileName: fileName,
+        fileSize: fileSize,
+      );
+    } catch (e) {
+      debugPrint('Error importing book: $e');
+      return null;
+    }
+  }
+
+  Future<Book?> importBookBytes(Uint8List bytes, String fileName) async {
+    return _importBookFromBytes(
+      bytes: bytes,
+      fileName: fileName,
+      fileSize: bytes.length,
+    );
+  }
+
+  Future<Book?> _importBookFromBytes({
+    required Uint8List bytes,
+    required String fileName,
+    required int fileSize,
+  }) async {
+    try {
       final extension = fileName.split('.').last.toLowerCase();
 
-      if (extension != 'txt' && extension != 'epub') {
+      if (extension != 'txt' &&
+          extension != 'epub' &&
+          extension != 'mobi' &&
+          extension != 'azw' &&
+          extension != 'azw3') {
         return null;
       }
 
       final title = fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
-      final fileSize = await file.length();
       final booksDir = await _getBooksDirectory();
       final newFileName = '${_uuid.v4()}.$extension';
       final newFile = File('${booksDir.path}/$newFileName');
-      await file.copy(newFile.path);
+      await newFile.writeAsBytes(bytes);
 
       String? bookTitle = title;
       String? author;
       Uint8List? coverImage;
 
       if (extension == 'epub') {
-        final bytes = await file.readAsBytes();
         final epubBook = await EpubReader.readBook(bytes);
 
         bookTitle = epubBook.Title?.isNotEmpty == true
@@ -79,23 +203,45 @@ class BookService {
         if (epubBook.CoverImage != null) {
           coverImage = epubBook.CoverImage!.getBytes();
         }
+      } else if (['mobi', 'azw', 'azw3'].contains(extension)) {
+        final mobiData = await MobiService.parse(bytes);
+
+        if (mobiData != null) {
+          bookTitle = mobiData.title.isNotEmpty ? mobiData.title : title;
+          author = mobiData.author;
+          coverImage = mobiData.coverImage;
+        }
       }
 
+      final bookId = _uuid.v4();
       final book = Book(
-        id: _uuid.v4(),
+        id: bookId,
         title: bookTitle,
         author: author,
         filePath: newFile.path,
         format: extension,
         fileSize: fileSize,
         addedAt: DateTime.now(),
-        coverImage: coverImage,
+        coverImage: coverImage, // Keep for backward compatibility
       );
 
-      await _saveBook(book);
+      // Save cover image to file and update book with file path
+      String? coverFilePath;
+      if (coverImage != null) {
+        coverFilePath = await saveCoverImage(book, coverImage);
+      }
+
+      final finalBook = coverFilePath != null
+          ? book.copyWith(
+              coverImageFilePath: coverFilePath,
+              clearCoverImage: true,
+            )
+          : book;
+
+      await _saveBook(finalBook);
       await _updateStatsBookCount();
 
-      return book;
+      return finalBook;
     } catch (e) {
       debugPrint('Error importing book: $e');
       return null;
@@ -129,11 +275,30 @@ class BookService {
       await file.delete();
     }
 
+    // Clean up cached chapter data and cover image
+    await _deleteBookCache(book);
+
     books.removeWhere((b) => b.id == bookId);
     await _prefs.setString(
       _booksKey,
       jsonEncode(books.map((b) => b.toMap()).toList()),
     );
+
+    final shelves = await getShelves();
+    bool shelvesChanged = false;
+    final updatedShelves = shelves.map((shelf) {
+      if (!shelf.bookIds.contains(bookId)) return shelf;
+      shelvesChanged = true;
+      final updatedBookIds = shelf.bookIds.where((id) => id != bookId).toList();
+      return shelf.copyWith(bookIds: updatedBookIds);
+    }).toList();
+    if (shelvesChanged) {
+      await _prefs.setString(
+        _shelvesKey,
+        jsonEncode(updatedShelves.map((s) => s.toMap()).toList()),
+      );
+    }
+
     await _updateStatsBookCount();
   }
 
@@ -145,6 +310,34 @@ class BookService {
     return decoded.map((b) => Book.fromMap(b as Map<String, dynamic>)).toList();
   }
 
+  /// Migrate existing books from base64 cover images to file storage
+  /// Call this once during app startup to optimize existing data
+  Future<void> migrateCoverImagesToFiles() async {
+    final books = await getBooks();
+    bool needsSave = false;
+
+    for (final book in books) {
+      // Skip if already migrated (has file path) or no cover image
+      if (book.coverImageFilePath != null || book.coverImage == null) continue;
+
+      // Save cover to file
+      final coverFilePath = await saveCoverImage(book, book.coverImage);
+      if (coverFilePath != null) {
+        final updatedBook = book.copyWith(
+          coverImageFilePath: coverFilePath,
+          clearCoverImage: true,
+        );
+        await _saveBook(updatedBook);
+        needsSave = true;
+        debugPrint('Migrated cover image for: ${book.title}');
+      }
+    }
+
+    if (needsSave) {
+      debugPrint('Cover image migration complete');
+    }
+  }
+
   Future<String> getBookContent(Book book) async {
     final file = File(book.filePath);
     if (!await file.exists()) {
@@ -153,6 +346,10 @@ class BookService {
 
     if (book.format == 'epub') {
       return getEpubFullContent(book);
+    }
+
+    if (['mobi', 'azw', 'azw3'].contains(book.format)) {
+      return getMobiFullContent(book);
     }
 
     try {
@@ -173,7 +370,17 @@ class BookService {
     return chapters.map((c) => c.content).join('\n\n');
   }
 
+  /// Get EPUB chapters with caching - major performance optimization
+  /// First access: parses file and caches chapters
+  /// Subsequent accesses: loads from cache (instant, no file I/O or parsing)
   Future<List<BookChapter>> getEpubChapters(Book book) async {
+    // Try to load from cache first - avoids expensive re-parsing
+    final cachedChapters = await _loadCachedChapters(book);
+    if (cachedChapters != null) {
+      return cachedChapters;
+    }
+
+    // Cache miss - parse the file
     final file = File(book.filePath);
     if (!await file.exists()) {
       throw Exception('Book file not found');
@@ -227,6 +434,39 @@ class BookService {
         }
       });
     }
+
+    // Cache the parsed chapters for future access
+    await _cacheChapters(book, chapters);
+
+    return chapters;
+  }
+
+  Future<String> getMobiFullContent(Book book) async {
+    final chapters = await getMobiChapters(book);
+    return chapters.map((c) => c.content).join('\n\n');
+  }
+
+  /// Get MOBI/AZW3 chapters with caching - major performance optimization
+  /// First access: parses file and caches chapters
+  /// Subsequent accesses: loads from cache (instant, no file I/O or parsing)
+  Future<List<BookChapter>> getMobiChapters(Book book) async {
+    // Try to load from cache first - avoids expensive re-parsing
+    final cachedChapters = await _loadCachedChapters(book);
+    if (cachedChapters != null) {
+      return cachedChapters;
+    }
+
+    // Cache miss - parse the file
+    final file = File(book.filePath);
+    if (!await file.exists()) {
+      throw Exception('Book file not found');
+    }
+
+    final bytes = await file.readAsBytes();
+    final chapters = await MobiService.extractChapters(bytes);
+
+    // Cache the parsed chapters for future access
+    await _cacheChapters(book, chapters);
 
     return chapters;
   }
@@ -315,10 +555,10 @@ class BookService {
   Future<void> addReadingTime(int minutes) async {
     if (minutes <= 0) return;
     final stats = await getStats();
+    final updatedStreakStats = _updateStreaks(stats, DateTime.now());
     await updateStats(
-      stats.copyWith(
+      updatedStreakStats.copyWith(
         totalReadingTimeMinutes: stats.totalReadingTimeMinutes + minutes,
-        lastReadDate: DateTime.now(),
       ),
     );
   }
@@ -354,30 +594,39 @@ class BookService {
     int? currentPage,
     int? totalPages,
   }) async {
-    // Calculate progress based on EPUB chapters or TXT pages
-    int progress = book.readingProgress;
+    final books = await getBooks();
+    final currentIndex = books.indexWhere((b) => b.id == book.id);
+    final currentBook = currentIndex >= 0 ? books[currentIndex] : book;
 
-    if (book.format == 'epub' && chapterIndex != null) {
-      // For EPUB, we estimate progress based on chapters
-      // Get total chapters to calculate percentage
-      final chapters = await getEpubChapters(book);
+    // Calculate progress based on EPUB chapters or TXT pages
+    int progress = currentBook.readingProgress;
+
+    if (currentBook.format == 'epub' && chapterIndex != null) {
+      final chapters = await getEpubChapters(currentBook);
       if (chapters.isNotEmpty) {
-        progress = ((chapterIndex / chapters.length) * 100).round();
+        progress = (((chapterIndex + 1) / chapters.length) * 100).round();
+      }
+    } else if (['mobi', 'azw', 'azw3'].contains(currentBook.format) &&
+        chapterIndex != null) {
+      final chapters = await getMobiChapters(currentBook);
+      if (chapters.isNotEmpty) {
+        progress = (((chapterIndex + 1) / chapters.length) * 100).round();
       }
     } else if (currentPage != null && totalPages != null && totalPages > 0) {
       progress = ((currentPage / totalPages) * 100).round();
     }
+    progress = progress.clamp(0, 100).toInt();
 
     // Only update max progress if new progress is higher (never decreases)
-    final maxProgress = progress > book.maxReadingProgress
+    final maxProgress = progress > currentBook.maxReadingProgress
         ? progress
-        : book.maxReadingProgress;
+        : currentBook.maxReadingProgress;
 
-    final updatedBook = book.copyWith(
-      currentChapterIndex: chapterIndex ?? book.currentChapterIndex,
-      scrollPosition: scrollPosition ?? book.scrollPosition,
-      currentPage: currentPage ?? book.currentPage,
-      totalPages: totalPages ?? book.totalPages,
+    final updatedBook = currentBook.copyWith(
+      currentChapterIndex: chapterIndex ?? currentBook.currentChapterIndex,
+      scrollPosition: scrollPosition ?? currentBook.scrollPosition,
+      currentPage: currentPage ?? currentBook.currentPage,
+      totalPages: totalPages ?? currentBook.totalPages,
       readingProgress: progress,
       maxReadingProgress: maxProgress,
       lastReadAt: DateTime.now(),
@@ -399,11 +648,46 @@ class BookService {
     );
 
     final stats = await getStats();
+    final updatedStreakStats = _updateStreaks(stats, DateTime.now());
     await updateStats(
-      stats.copyWith(
-        totalPagesRead: stats.totalPagesRead + 1,
-        lastReadDate: DateTime.now(),
-      ),
+      updatedStreakStats.copyWith(totalPagesRead: stats.totalPagesRead + 1),
+    );
+  }
+
+  ReadingStats _updateStreaks(ReadingStats stats, DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    final last = stats.lastReadDate;
+    if (last == null) {
+      return stats.copyWith(
+        currentStreak: 1,
+        longestStreak: stats.longestStreak < 1 ? 1 : stats.longestStreak,
+        lastReadDate: now,
+      );
+    }
+
+    final lastDay = DateTime(last.year, last.month, last.day);
+    final dayDiff = today.difference(lastDay).inDays;
+
+    if (dayDiff <= 0) {
+      return stats.copyWith(lastReadDate: now);
+    }
+
+    if (dayDiff == 1) {
+      final currentStreak = stats.currentStreak + 1;
+      final longestStreak = currentStreak > stats.longestStreak
+          ? currentStreak
+          : stats.longestStreak;
+      return stats.copyWith(
+        currentStreak: currentStreak,
+        longestStreak: longestStreak,
+        lastReadDate: now,
+      );
+    }
+
+    return stats.copyWith(
+      currentStreak: 1,
+      longestStreak: stats.longestStreak < 1 ? 1 : stats.longestStreak,
+      lastReadDate: now,
     );
   }
 

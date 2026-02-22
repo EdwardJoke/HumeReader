@@ -15,7 +15,10 @@ class Book {
   final int readingProgress; // Current reading progress (0-100)
   final int
   maxReadingProgress; // Maximum progress ever achieved (never decreases)
-  final Uint8List? coverImage;
+  // Cover image is now stored as file path for performance
+  // coverImage field kept for backward compatibility during migration
+  final Uint8List? coverImage; // Deprecated: use coverImageFilePath
+  final String? coverImageFilePath; // Path to cover image file
   final int currentChapterIndex; // For EPUB: which chapter user is on
   final double scrollPosition; // Scroll position within chapter/content
 
@@ -33,6 +36,7 @@ class Book {
     this.readingProgress = 0,
     this.maxReadingProgress = 0,
     this.coverImage,
+    this.coverImageFilePath,
     this.currentChapterIndex = 0,
     this.scrollPosition = 0.0,
   });
@@ -51,8 +55,10 @@ class Book {
     int? readingProgress,
     int? maxReadingProgress,
     Uint8List? coverImage,
+    String? coverImageFilePath,
     int? currentChapterIndex,
     double? scrollPosition,
+    bool clearCoverImage = false,
   }) {
     return Book(
       id: id ?? this.id,
@@ -67,7 +73,8 @@ class Book {
       totalPages: totalPages ?? this.totalPages,
       readingProgress: readingProgress ?? this.readingProgress,
       maxReadingProgress: maxReadingProgress ?? this.maxReadingProgress,
-      coverImage: coverImage ?? this.coverImage,
+      coverImage: clearCoverImage ? null : (coverImage ?? this.coverImage),
+      coverImageFilePath: coverImageFilePath ?? this.coverImageFilePath,
       currentChapterIndex: currentChapterIndex ?? this.currentChapterIndex,
       scrollPosition: scrollPosition ?? this.scrollPosition,
     );
@@ -87,7 +94,9 @@ class Book {
       'totalPages': totalPages,
       'readingProgress': readingProgress,
       'maxReadingProgress': maxReadingProgress,
-      'coverImage': coverImage != null ? base64Encode(coverImage!) : null,
+      // Don't store coverImage bytes anymore - use coverImageFilePath
+      // This dramatically reduces SharedPreferences storage
+      'coverImageFilePath': coverImageFilePath,
       'currentChapterIndex': currentChapterIndex,
       'scrollPosition': scrollPosition,
     };
@@ -109,9 +118,12 @@ class Book {
       totalPages: map['totalPages'] as int? ?? 0,
       readingProgress: map['readingProgress'] as int? ?? 0,
       maxReadingProgress: map['maxReadingProgress'] as int? ?? 0,
+      // Keep backward compatibility: load from base64 if no filePath
+      // This allows migration of existing books
       coverImage: map['coverImage'] != null
           ? base64Decode(map['coverImage'] as String)
           : null,
+      coverImageFilePath: map['coverImageFilePath'] as String?,
       currentChapterIndex: map['currentChapterIndex'] as int? ?? 0,
       scrollPosition: (map['scrollPosition'] as num?)?.toDouble() ?? 0.0,
     );

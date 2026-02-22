@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  Enhanced MOBI content extraction with direct record parsing fallback
 
 
-## [0.1.6-beta1] - 2025-02-21
+## [0.1.6-beta1] - 2026-02-21
 
 ### Fixed
 
@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved MOBI title extraction with better fallback chain (PDB header → MOBI header → EXTH)
 - Enhanced MOBI content extraction with direct record parsing fallback
 
-## [0.1.5-pre2] - 2025-02-19
+## [0.1.5-pre2] - 2026-02-19
 
 ### Added
 
@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Full-screen mode enabled by default on mobile devices
 
-## [0.1.5-pre1] - 2025-02-15
+## [0.1.5-pre1] - 2026-02-15
 
 ### Added
 

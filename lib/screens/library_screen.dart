@@ -60,14 +60,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Future<void> _importBook() async {
     try {
+      final useAndroidAnyPicker = PlatformUtils.isAndroid;
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: _supportedExtensions,
+        type: useAndroidAnyPicker ? FileType.any : FileType.custom,
+        allowedExtensions: useAndroidAnyPicker ? null : _supportedExtensions,
         withData: PlatformUtils.isWeb,
       );
 
       if (result != null) {
         final pickedFile = result.files.single;
+        if (!_isSupportedFileName(pickedFile.name)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Unsupported file type. Please pick a txt, epub, mobi, azw, or azw3 file.',
+                ),
+              ),
+            );
+          }
+          return;
+        }
+
         final service = await _bookServiceFuture;
         Book? book;
 

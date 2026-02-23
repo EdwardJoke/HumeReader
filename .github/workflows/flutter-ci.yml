@@ -350,17 +350,14 @@ jobs:
           echo "## Build Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Check each job status
-          for job in analyze android ios macos linux windows web; do
-            status=$(jq -r '.jobs.$job.result' <<< '${{ toJson(needs) }}')
-            if [ "$status" == "success" ]; then
-              echo "✅ $job: PASSED" >> $GITHUB_STEP_SUMMARY
-            elif [ "$status" == "skipped" ]; then
-              echo "⏭️ $job: SKIPPED" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "❌ $job: FAILED" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
+          # Check each job status using GitHub context directly
+          echo "- analyze: ${{ needs.analyze.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- android: ${{ needs.android.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ios: ${{ needs.ios.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- macos: ${{ needs.macos.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- linux: ${{ needs.linux.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- windows: ${{ needs.windows.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- web: ${{ needs.web.result }}" >> $GITHUB_STEP_SUMMARY
           
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Artifacts" >> $GITHUB_STEP_SUMMARY

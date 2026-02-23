@@ -1,5 +1,7 @@
 # Hume
 
+![GitHub CI](https://github.com/EdwardJoke/HumeReader/actions/workflows/flutter-ci.yml/badge.svg)
+
 A cross-platform ebook reader built with Flutter. Read EPUB, MOBI (KF7/KF8), AZW, AZW3, and TXT files with a beautiful reading experience, track your reading habits, and organize your library.
 
 ## Features

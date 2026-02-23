@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-02-22
+
+### Added
+
+- Web-native file import using in-memory bytes path
+- Drag-and-drop ebook import support on web and desktop platforms
+
+### Changed
+
+- Standardized app/build output naming to `Hume` across Android, iOS, macOS, Windows, and Linux targets
+- Updated Android release artifact naming to generate `Hume.apk` in release output directory
+- Removed completed `FEAT-001` from `MILESTONE.toml`
+
 ## [0.1.6-beta2] - 2026-02-22
 
 ### Performance
@@ -103,6 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reading statistics dashboard
 
 [0.1.6-beta2]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.6-beta1...v0.1.6-beta2
+[0.1.7]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.6-beta2...v0.1.7
 [0.1.6-beta1]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.5-pre2...v0.1.6-beta1
 [0.1.5-pre2]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.5-pre1...v0.1.5-pre2
 [0.1.5-pre1]: https://github.com/EdwardJoke/HumeReader/releases/tag/v0.1.5-pre1

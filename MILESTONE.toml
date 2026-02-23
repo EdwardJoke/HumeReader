@@ -4,18 +4,6 @@ project = "hume"
 source = "code-audit + flutter analyze/test/build-web"
 
 [[features]]
-id = "FEAT-001"
-title = "Implement web-native import (bytes + drag-and-drop)"
-priority = "high"
-status = "idea"
-why = "Completes advertised web support and fixes current web import friction."
-proposal = [
-  "Add BookService.importBookBytes(Uint8List bytes, String fileName).",
-  "In LibraryScreen, branch for web to consume PlatformFile.bytes.",
-  "Optional: add drag-and-drop dropzone for desktop/web UX parity."
-]
-
-[[features]]
 id = "FEAT-002"
 title = "Highlighting, notes, and bookmarks"
 priority = "high"

@@ -12,14 +12,12 @@ on:
     branches: [ master, dev ]
   workflow_dispatch:
 
-# Cancel in-progress runs for the same branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: '3.27.3'
-  DART_VERSION: '3.12.0'
+  FLUTTER_BRANCH: 'beta'
 
 jobs:
   # ===========================================
@@ -33,21 +31,22 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          export PATH="$HOME/flutter/bin:$PATH"
+          flutter doctor -v
 
-      - name: Cache Flutter dependencies
+      - name: Cache Flutter SDK
         uses: actions/cache@v4
         with:
           path: |
+            ~/flutter
             ~/.pub-cache
-            ~/.flutter
             build/
-          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
             ${{ runner.os }}-flutter-
 
       - name: Get dependencies
@@ -79,21 +78,22 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          export PATH="$HOME/flutter/bin:$PATH"
+          flutter doctor -v
 
-      - name: Cache Flutter dependencies
+      - name: Cache Flutter SDK
         uses: actions/cache@v4
         with:
           path: |
+            ~/flutter
             ~/.pub-cache
-            ~/.flutter
             build/
-          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
             ${{ runner.os }}-flutter-
 
       - name: Get dependencies
@@ -133,21 +133,22 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          export PATH="$HOME/flutter/bin:$PATH"
+          flutter doctor -v
 
-      - name: Cache Flutter dependencies
+      - name: Cache Flutter SDK
         uses: actions/cache@v4
         with:
           path: |
+            ~/flutter
             ~/.pub-cache
-            ~/.flutter
             build/
-          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
             ${{ runner.os }}-flutter-
 
       - name: Get dependencies
@@ -175,21 +176,22 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          export PATH="$HOME/flutter/bin:$PATH"
+          flutter doctor -v
 
-      - name: Cache Flutter dependencies
+      - name: Cache Flutter SDK
         uses: actions/cache@v4
         with:
           path: |
+            ~/flutter
             ~/.pub-cache
-            ~/.flutter
             build/
-          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
             ${{ runner.os }}-flutter-
 
       - name: Get dependencies
@@ -216,27 +218,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
 
-      - name: Cache Flutter dependencies
+      - name: Setup Flutter
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          export PATH="$HOME/flutter/bin:$PATH"
+          flutter doctor -v
+
+      - name: Cache Flutter SDK
         uses: actions/cache@v4
         with:
           path: |
+            ~/flutter
             ~/.pub-cache
-            ~/.flutter
             build/
-          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
             ${{ runner.os }}-flutter-
 
       - name: Get dependencies
@@ -264,21 +267,23 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
+        shell: bash
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          export PATH="$HOME/flutter/bin:$PATH"
+          flutter doctor -v
 
-      - name: Cache Flutter dependencies
+      - name: Cache Flutter SDK
         uses: actions/cache@v4
         with:
           path: |
+            ~/flutter
             ~/.pub-cache
-            ~/.flutter
             build/
-          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
             ${{ runner.os }}-flutter-
 
       - name: Get dependencies
@@ -306,21 +311,22 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          export PATH="$HOME/flutter/bin:$PATH"
+          flutter doctor -v
 
-      - name: Cache Flutter dependencies
+      - name: Cache Flutter SDK
         uses: actions/cache@v4
         with:
           path: |
+            ~/flutter
             ~/.pub-cache
-            ~/.flutter
             build/
-          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-${{ env.FLUTTER_VERSION }}-
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
             ${{ runner.os }}-flutter-
 
       - name: Get dependencies
@@ -350,7 +356,6 @@ jobs:
           echo "## Build Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Check each job status using GitHub context directly
           echo "- analyze: ${{ needs.analyze.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- android: ${{ needs.android.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- ios: ${{ needs.ios.result }}" >> $GITHUB_STEP_SUMMARY

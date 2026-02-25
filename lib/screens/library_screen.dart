@@ -706,7 +706,55 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
         ],
       ),
-      body: _buildDropTarget(_buildBody()),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildDropTarget(_buildBody())),
+          if (_isImporting) _buildImportOverlay(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImportOverlay() {
+    return Positioned.fill(
+      child: AbsorbPointer(
+        child: ColoredBox(
+          color: Colors.black.withValues(alpha: 0.35),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 340),
+              child: Card(
+                margin: const EdgeInsets.all(16),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Importing in background',
+                        style: Theme.of(context).textTheme.titleMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _importStatusText,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      if (_importProgress != null) ...[
+                        const SizedBox(height: 12),
+                        LinearProgressIndicator(value: _importProgress),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

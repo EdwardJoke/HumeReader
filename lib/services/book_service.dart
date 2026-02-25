@@ -23,6 +23,38 @@ class FilePermissionException implements Exception {
   String toString() => 'FilePermissionException: $message';
 }
 
+Future<Map<String, dynamic>> _extractBookMetadata(
+  Map<String, dynamic> payload,
+) async {
+  final bytes = payload['bytes'] as Uint8List;
+  final extension = payload['extension'] as String;
+  final fallbackTitle = payload['fallbackTitle'] as String;
+
+  String title = fallbackTitle;
+  String? author;
+  Uint8List? coverImage;
+
+  if (extension == 'epub') {
+    final epubBook = await EpubReader.readBook(bytes);
+    title = epubBook.Title?.isNotEmpty == true
+        ? epubBook.Title!
+        : fallbackTitle;
+    author = epubBook.Author;
+    if (epubBook.CoverImage != null) {
+      coverImage = epubBook.CoverImage!.getBytes();
+    }
+  } else if (['mobi', 'azw', 'azw3'].contains(extension)) {
+    final mobiData = await MobiService.parse(bytes);
+    if (mobiData != null) {
+      title = mobiData.title.isNotEmpty ? mobiData.title : fallbackTitle;
+      author = mobiData.author;
+      coverImage = mobiData.coverImage;
+    }
+  }
+
+  return {'title': title, 'author': author, 'coverImage': coverImage};
+}
+
 class BookService {
   static const String _booksKey = 'books';
   static const String _statsKey = 'reading_stats';
@@ -192,31 +224,23 @@ class BookService {
       String? author;
       Uint8List? coverImage;
 
-      if (extension == 'epub') {
-        final epubBook = await EpubReader.readBook(bytes);
-
-        bookTitle = epubBook.Title?.isNotEmpty == true
-            ? epubBook.Title!
-            : title;
-        author = epubBook.Author;
-
-        if (epubBook.CoverImage != null) {
-          coverImage = epubBook.CoverImage!.getBytes();
-        }
-      } else if (['mobi', 'azw', 'azw3'].contains(extension)) {
-        final mobiData = await MobiService.parse(bytes);
-
-        if (mobiData != null) {
-          bookTitle = mobiData.title.isNotEmpty ? mobiData.title : title;
-          author = mobiData.author;
-          coverImage = mobiData.coverImage;
-        }
+      try {
+        final metadata = await compute(_extractBookMetadata, {
+          'bytes': bytes,
+          'extension': extension,
+          'fallbackTitle': title,
+        });
+        bookTitle = metadata['title'] as String?;
+        author = metadata['author'] as String?;
+        coverImage = metadata['coverImage'] as Uint8List?;
+      } catch (e) {
+        debugPrint('Background metadata parsing failed, using fallback: $e');
       }
 
       final bookId = _uuid.v4();
       final book = Book(
         id: bookId,
-        title: bookTitle,
+        title: bookTitle ?? title,
         author: author,
         filePath: newFile.path,
         format: extension,

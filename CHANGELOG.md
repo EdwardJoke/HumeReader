@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-02-25
+
+### Performance
+
+- Moved EPUB/MOBI chapter extraction to isolate workers to reduce main-thread blocking.
+- Added session-level chapter caching and a compact disk cache format that stores metadata plus nearby chapter content.
+- Deferred initial reader loading until route transition completion so the loading UI renders immediately.
+
+### Changed
+
+- Updated reader startup flow to gate controls while initial content is loading.
+- Added on-demand chapter hydration when navigating to chapters without preloaded content.
+- Bumped app version to `0.1.10+1` in `pubspec.yaml`.
+
+## [0.1.9] - 2026-02-24
+
+### Added
+
+- Added a dedicated settings screen with update channel selector and about link.
+- Added a foreground import/loading experience for large book parsing.
+
+### Changed
+
+- Standardized the User screen around Material design patterns.
+- Improved large-book reading flow with asynchronous loading in library/reader pipelines.
+
 ## [0.1.7] - 2026-02-22
 
 ### Added
@@ -116,6 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reading statistics dashboard
 
 [0.1.6-beta2]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.6-beta1...v0.1.6-beta2
+[0.1.10]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.9...v0.1.10
+[0.1.9]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.7...v0.1.9
 [0.1.7]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.6-beta2...v0.1.7
 [0.1.6-beta1]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.5-pre2...v0.1.6-beta1
 [0.1.5-pre2]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.5-pre1...v0.1.5-pre2

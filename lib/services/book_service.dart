@@ -55,14 +55,108 @@ Future<Map<String, dynamic>> _extractBookMetadata(
   return {'title': title, 'author': author, 'coverImage': coverImage};
 }
 
+Future<List<Map<String, dynamic>>> _extractEpubChapters(
+  Map<String, dynamic> payload,
+) async {
+  final bytes = payload['bytes'] as Uint8List;
+  final epubBook = await EpubReader.readBook(bytes);
+  final chapters = <Map<String, dynamic>>[];
+  int index = 0;
+
+  void collectChapters(List<EpubChapter> epubChapters) {
+    for (final chapter in epubChapters) {
+      final title = chapter.Title ?? 'Chapter ${index + 1}';
+      final htmlContent = chapter.HtmlContent ?? '';
+      final href = chapter.ContentFileName;
+
+      chapters.add({
+        'title': title,
+        'content': _stripHtmlText(htmlContent),
+        'htmlContent': _cleanHtmlText(htmlContent),
+        'index': index,
+        'href': href,
+      });
+      index++;
+
+      if (chapter.SubChapters != null && chapter.SubChapters!.isNotEmpty) {
+        collectChapters(chapter.SubChapters!);
+      }
+    }
+  }
+
+  if (epubBook.Chapters != null && epubBook.Chapters!.isNotEmpty) {
+    collectChapters(epubBook.Chapters!);
+  } else {
+    epubBook.Content?.Html?.forEach((key, value) {
+      final html = value.Content ?? '';
+      if (html.isNotEmpty) {
+        chapters.add({
+          'title': value.FileName ?? key,
+          'content': _stripHtmlText(html),
+          'htmlContent': _cleanHtmlText(html),
+          'index': chapters.length,
+          'href': value.FileName ?? key,
+        });
+      }
+    });
+  }
+
+  return chapters;
+}
+
+Future<List<Map<String, dynamic>>> _extractMobiChapters(
+  Map<String, dynamic> payload,
+) async {
+  final bytes = payload['bytes'] as Uint8List;
+  final chapters = await MobiService.extractChapters(bytes);
+  return chapters.map((chapter) => chapter.toMap()).toList();
+}
+
+String _cleanHtmlText(String html) {
+  return html
+      .replaceAll(
+        RegExp(r'<script[^>]*>[\s\S]*?</script>', caseSensitive: false),
+        '',
+      )
+      .replaceAll(
+        RegExp(r'<style[^>]*>[\s\S]*?</style>', caseSensitive: false),
+        '',
+      )
+      .trim();
+}
+
+String _stripHtmlText(String html) {
+  return html
+      .replaceAll(
+        RegExp(r'<script[^>]*>[\s\S]*?</script>', caseSensitive: false),
+        '',
+      )
+      .replaceAll(
+        RegExp(r'<style[^>]*>[\s\S]*?</style>', caseSensitive: false),
+        '',
+      )
+      .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
 class BookService {
   static const String _booksKey = 'books';
   static const String _statsKey = 'reading_stats';
   static const String _shelvesKey = 'shelves';
   static const String _booksDir = 'books';
+  static const int _chapterCacheVersion = 2;
+  static const int _recentChapterCacheRadius = 2;
 
   final SharedPreferences _prefs;
   final Uuid _uuid = const Uuid();
+  final Map<String, List<BookChapter>> _sessionChapterCache = {};
 
   BookService(this._prefs);
 
@@ -92,11 +186,63 @@ class BookService {
     return File('${booksDir.path}/${book.id}_cover.jpg');
   }
 
-  /// Cache chapters to disk - avoids re-parsing on every access
-  Future<void> _cacheChapters(Book book, List<BookChapter> chapters) async {
+  List<int> _buildRecentChapterIndexes({
+    required int centerIndex,
+    required int totalChapters,
+  }) {
+    if (totalChapters <= 0) return const [];
+    final safeCenter = centerIndex.clamp(0, totalChapters - 1);
+    final indexes = <int>[];
+    final start = safeCenter - _recentChapterCacheRadius;
+    final end = safeCenter + _recentChapterCacheRadius;
+    for (int i = start; i <= end; i++) {
+      if (i >= 0 && i < totalChapters) {
+        indexes.add(i);
+      }
+    }
+    return indexes;
+  }
+
+  /// Cache only recently read chapter content, but keep metadata for all chapters.
+  Future<void> _cacheChapters(
+    Book book,
+    List<BookChapter> chapters, {
+    int? centerIndex,
+  }) async {
     try {
+      if (chapters.isEmpty) return;
       final cacheFile = await _getChapterCacheFile(book);
-      final jsonData = jsonEncode(chapters.map((c) => c.toMap()).toList());
+      final recentIndexes = _buildRecentChapterIndexes(
+        centerIndex: centerIndex ?? book.currentChapterIndex,
+        totalChapters: chapters.length,
+      ).toSet();
+
+      final metadata = chapters
+          .map(
+            (chapter) => {
+              'title': chapter.title,
+              'index': chapter.index,
+              'href': chapter.href,
+            },
+          )
+          .toList();
+
+      final recentContent = chapters
+          .where((chapter) => recentIndexes.contains(chapter.index))
+          .map(
+            (chapter) => {
+              'index': chapter.index,
+              'content': chapter.content,
+              'htmlContent': chapter.htmlContent,
+            },
+          )
+          .toList();
+
+      final jsonData = jsonEncode({
+        'version': _chapterCacheVersion,
+        'metadata': metadata,
+        'recentContent': recentContent,
+      });
       await cacheFile.writeAsString(jsonData);
     } catch (e) {
       debugPrint('Error caching chapters: $e');
@@ -109,15 +255,82 @@ class BookService {
       final cacheFile = await _getChapterCacheFile(book);
       if (!await cacheFile.exists()) return null;
 
-      final jsonData = await cacheFile.readAsString();
-      final List<dynamic> decoded = jsonDecode(jsonData) as List<dynamic>;
-      return decoded
-          .map((c) => BookChapter.fromMap(c as Map<String, dynamic>))
-          .toList();
+      final decoded = jsonDecode(await cacheFile.readAsString());
+
+      // Backward compatibility with legacy full-cache format.
+      if (decoded is List<dynamic>) {
+        return decoded
+            .map((c) => BookChapter.fromMap(c as Map<String, dynamic>))
+            .toList();
+      }
+
+      if (decoded is! Map<String, dynamic>) {
+        return null;
+      }
+
+      final metadata = decoded['metadata'] as List<dynamic>? ?? const [];
+      if (metadata.isEmpty) return null;
+
+      final recentContent =
+          decoded['recentContent'] as List<dynamic>? ?? const [];
+      final contentByIndex = <int, Map<String, dynamic>>{};
+      for (final item in recentContent) {
+        final map = item as Map<String, dynamic>;
+        final index = map['index'];
+        if (index is int) {
+          contentByIndex[index] = map;
+        }
+      }
+
+      final chapters = metadata.map((item) {
+        final map = item as Map<String, dynamic>;
+        final index = map['index'] as int;
+        final cached = contentByIndex[index];
+        return BookChapter(
+          title: map['title'] as String? ?? 'Chapter ${index + 1}',
+          content: cached?['content'] as String? ?? '',
+          htmlContent: cached?['htmlContent'] as String?,
+          index: index,
+          href: map['href'] as String?,
+        );
+      }).toList();
+      chapters.sort((a, b) => a.index.compareTo(b.index));
+      return chapters;
     } catch (e) {
       debugPrint('Error loading cached chapters: $e');
       return null;
     }
+  }
+
+  Future<List<BookChapter>> _parseEpubChapters(Book book) async {
+    final file = File(book.filePath);
+    if (!await file.exists()) {
+      throw Exception('Book file not found');
+    }
+
+    final bytes = await file.readAsBytes();
+    final chapterMaps = await compute(_extractEpubChapters, {'bytes': bytes});
+    return chapterMaps
+        .map(
+          (map) => BookChapter(
+            title: map['title'] as String? ?? 'Chapter',
+            content: map['content'] as String? ?? '',
+            htmlContent: map['htmlContent'] as String?,
+            index: map['index'] as int? ?? 0,
+            href: map['href'] as String?,
+          ),
+        )
+        .toList();
+  }
+
+  Future<List<BookChapter>> _parseMobiChapters(Book book) async {
+    final file = File(book.filePath);
+    if (!await file.exists()) {
+      throw Exception('Book file not found');
+    }
+    final bytes = await file.readAsBytes();
+    final chapterMaps = await compute(_extractMobiChapters, {'bytes': bytes});
+    return chapterMaps.map(BookChapter.fromMap).toList();
   }
 
   /// Save cover image to file instead of storing in SharedPreferences
@@ -301,6 +514,7 @@ class BookService {
 
     // Clean up cached chapter data and cover image
     await _deleteBookCache(book);
+    _sessionChapterCache.remove(book.id);
 
     books.removeWhere((b) => b.id == bookId);
     await _prefs.setString(
@@ -390,7 +604,7 @@ class BookService {
   }
 
   Future<String> getEpubFullContent(Book book) async {
-    final chapters = await getEpubChapters(book);
+    final chapters = await _parseEpubChapters(book);
     return chapters.map((c) => c.content).join('\n\n');
   }
 
@@ -398,75 +612,27 @@ class BookService {
   /// First access: parses file and caches chapters
   /// Subsequent accesses: loads from cache (instant, no file I/O or parsing)
   Future<List<BookChapter>> getEpubChapters(Book book) async {
+    final sessionChapters = _sessionChapterCache[book.id];
+    if (sessionChapters != null && sessionChapters.isNotEmpty) {
+      return sessionChapters;
+    }
+
     // Try to load from cache first - avoids expensive re-parsing
     final cachedChapters = await _loadCachedChapters(book);
     if (cachedChapters != null) {
+      _sessionChapterCache[book.id] = cachedChapters;
       return cachedChapters;
     }
 
-    // Cache miss - parse the file
-    final file = File(book.filePath);
-    if (!await file.exists()) {
-      throw Exception('Book file not found');
-    }
-
-    final bytes = await file.readAsBytes();
-    final epubBook = await EpubReader.readBook(bytes);
-
-    final chapters = <BookChapter>[];
-    int index = 0;
-
-    void collectChapters(List<EpubChapter> epubChapters) {
-      for (final chapter in epubChapters) {
-        final title = chapter.Title ?? 'Chapter ${index + 1}';
-        final htmlContent = chapter.HtmlContent ?? '';
-        final href = chapter.ContentFileName;
-
-        chapters.add(
-          BookChapter(
-            title: title,
-            content: _stripHtml(htmlContent),
-            htmlContent: _cleanHtml(htmlContent),
-            index: index,
-            href: href,
-          ),
-        );
-        index++;
-
-        if (chapter.SubChapters != null && chapter.SubChapters!.isNotEmpty) {
-          collectChapters(chapter.SubChapters!);
-        }
-      }
-    }
-
-    if (epubBook.Chapters != null && epubBook.Chapters!.isNotEmpty) {
-      collectChapters(epubBook.Chapters!);
-    } else {
-      // Fallback: create chapters from all HTML content files
-      epubBook.Content?.Html?.forEach((key, value) {
-        final html = value.Content ?? '';
-        if (html.isNotEmpty) {
-          chapters.add(
-            BookChapter(
-              title: value.FileName ?? key,
-              content: _stripHtml(html),
-              htmlContent: _cleanHtml(html),
-              index: chapters.length,
-              href: value.FileName ?? key,
-            ),
-          );
-        }
-      });
-    }
-
-    // Cache the parsed chapters for future access
-    await _cacheChapters(book, chapters);
+    final chapters = await _parseEpubChapters(book);
+    _sessionChapterCache[book.id] = chapters;
+    await _cacheChapters(book, chapters, centerIndex: book.currentChapterIndex);
 
     return chapters;
   }
 
   Future<String> getMobiFullContent(Book book) async {
-    final chapters = await getMobiChapters(book);
+    final chapters = await _parseMobiChapters(book);
     return chapters.map((c) => c.content).join('\n\n');
   }
 
@@ -474,59 +640,56 @@ class BookService {
   /// First access: parses file and caches chapters
   /// Subsequent accesses: loads from cache (instant, no file I/O or parsing)
   Future<List<BookChapter>> getMobiChapters(Book book) async {
+    final sessionChapters = _sessionChapterCache[book.id];
+    if (sessionChapters != null && sessionChapters.isNotEmpty) {
+      return sessionChapters;
+    }
+
     // Try to load from cache first - avoids expensive re-parsing
     final cachedChapters = await _loadCachedChapters(book);
     if (cachedChapters != null) {
+      _sessionChapterCache[book.id] = cachedChapters;
       return cachedChapters;
     }
 
-    // Cache miss - parse the file
-    final file = File(book.filePath);
-    if (!await file.exists()) {
-      throw Exception('Book file not found');
-    }
-
-    final bytes = await file.readAsBytes();
-    final chapters = await MobiService.extractChapters(bytes);
-
-    // Cache the parsed chapters for future access
-    await _cacheChapters(book, chapters);
+    final chapters = await _parseMobiChapters(book);
+    _sessionChapterCache[book.id] = chapters;
+    await _cacheChapters(book, chapters, centerIndex: book.currentChapterIndex);
 
     return chapters;
   }
 
-  String _cleanHtml(String html) {
-    return html
-        .replaceAll(
-          RegExp(r'<script[^>]*>[\s\S]*?</script>', caseSensitive: false),
-          '',
-        )
-        .replaceAll(
-          RegExp(r'<style[^>]*>[\s\S]*?</style>', caseSensitive: false),
-          '',
-        )
-        .trim();
+  Future<BookChapter?> getEpubChapterByIndex(Book book, int index) async {
+    final chapters = await getEpubChapters(book);
+    if (index < 0 || index >= chapters.length) return null;
+
+    final chapter = chapters[index];
+    if (chapter.content.isNotEmpty ||
+        (chapter.htmlContent?.isNotEmpty ?? false)) {
+      return chapter;
+    }
+
+    final parsedChapters = await _parseEpubChapters(book);
+    _sessionChapterCache[book.id] = parsedChapters;
+    await _cacheChapters(book, parsedChapters, centerIndex: index);
+    if (index < 0 || index >= parsedChapters.length) return null;
+    return parsedChapters[index];
   }
 
-  String _stripHtml(String html) {
-    return html
-        .replaceAll(
-          RegExp(r'<script[^>]*>[\s\S]*?</script>', caseSensitive: false),
-          '',
-        )
-        .replaceAll(
-          RegExp(r'<style[^>]*>[\s\S]*?</style>', caseSensitive: false),
-          '',
-        )
-        .replaceAll(RegExp(r'<[^>]+>'), '')
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+  Future<BookChapter?> getMobiChapterByIndex(Book book, int index) async {
+    final chapters = await getMobiChapters(book);
+    if (index < 0 || index >= chapters.length) return null;
+
+    final chapter = chapters[index];
+    if (chapter.content.isNotEmpty) {
+      return chapter;
+    }
+
+    final parsedChapters = await _parseMobiChapters(book);
+    _sessionChapterCache[book.id] = parsedChapters;
+    await _cacheChapters(book, parsedChapters, centerIndex: index);
+    if (index < 0 || index >= parsedChapters.length) return null;
+    return parsedChapters[index];
   }
 
   /// Checks if an error is related to file permission issues.
@@ -621,6 +784,8 @@ class BookService {
     final books = await getBooks();
     final currentIndex = books.indexWhere((b) => b.id == book.id);
     final currentBook = currentIndex >= 0 ? books[currentIndex] : book;
+    final chapterChanged =
+        chapterIndex != null && chapterIndex != currentBook.currentChapterIndex;
 
     // Calculate progress based on EPUB chapters or TXT pages
     int progress = currentBook.readingProgress;
@@ -657,6 +822,12 @@ class BookService {
     );
 
     await updateBook(updatedBook);
+    if (chapterChanged) {
+      final chapters = _sessionChapterCache[updatedBook.id];
+      if (chapters != null && chapters.isNotEmpty) {
+        await _cacheChapters(updatedBook, chapters, centerIndex: chapterIndex);
+      }
+    }
     await _updateStatsBookCount();
   }
 

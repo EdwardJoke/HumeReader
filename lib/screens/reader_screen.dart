@@ -20,6 +20,7 @@ class ReaderScreen extends StatefulWidget {
 class _ReaderScreenState extends State<ReaderScreen>
     with WidgetsBindingObserver {
   late Future<String> _contentFuture;
+  final Completer<String> _contentCompleter = Completer<String>();
   late ScrollController _scrollController;
   late BookService _bookService;
 
@@ -30,6 +31,8 @@ class _ReaderScreenState extends State<ReaderScreen>
   int _currentChapterIndex = 0;
   bool _isLoadingChapter = false;
   bool _isRestoringPosition = false;
+  bool _isInitialLoading = true;
+  bool _isBookServiceReady = false;
 
   // Reading time tracking
   Timer? _readingTimer;
@@ -45,7 +48,14 @@ class _ReaderScreenState extends State<ReaderScreen>
     _scrollController = ScrollController();
     _currentChapterIndex = widget.book.currentChapterIndex;
     _scrollController.addListener(_onScrollChanged);
-    _contentFuture = _loadContent();
+    _contentFuture = _contentCompleter.future;
+
+    // Ensure loader frame is rendered and route transition is complete first.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
+      await _startInitialLoadWhenRouteVisible(route);
+    });
   }
 
   @override
@@ -105,6 +115,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Future<void> _saveAccumulatedTime() async {
+    if (!_isBookServiceReady) return;
     if (_accumulatedMinutes <= 0) return;
 
     final minutesToSave = _accumulatedMinutes;
@@ -127,6 +138,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Future<void> _saveReadingPosition() async {
+    if (!_isBookServiceReady) return;
     if (_isRestoringPosition) return;
 
     try {
@@ -143,35 +155,92 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Future<String> _loadContent() async {
-    _bookService = await BookService.create();
+    try {
+      _bookService = await BookService.create();
+      _isBookServiceReady = true;
 
-    if (widget.book.format == 'epub') {
-      _chapters = await _bookService.getEpubChapters(widget.book);
-      if (_chapters != null && _chapters!.isNotEmpty) {
-        // Clamp chapter index to valid range
-        final validIndex = _currentChapterIndex.clamp(0, _chapters!.length - 1);
-        setState(() {
-          _currentChapterIndex = validIndex;
-          _content = _chapters![validIndex].content;
-          _htmlContent = _chapters![validIndex].htmlContent ?? _content;
-        });
+      if (widget.book.format == 'epub') {
+        _chapters = await _bookService.getEpubChapters(widget.book);
+        if (_chapters != null && _chapters!.isNotEmpty) {
+          // Clamp chapter index to valid range
+          final validIndex = _currentChapterIndex.clamp(
+            0,
+            _chapters!.length - 1,
+          );
+          await _ensureChapterLoaded(validIndex);
+          setState(() {
+            _currentChapterIndex = validIndex;
+            _content = _chapters![validIndex].content;
+            _htmlContent = _chapters![validIndex].htmlContent ?? _content;
+          });
 
-        // Restore scroll position after content loads
-        _restoreScrollPosition();
-        // Start tracking reading time
-        _startReadingTimer();
-        return _content;
+          // Restore scroll position after content loads
+          _restoreScrollPosition();
+          // Start tracking reading time
+          _startReadingTimer();
+          return _content;
+        }
+      }
+
+      final content = await _bookService.getBookContent(widget.book);
+      setState(() => _content = content);
+
+      // Restore scroll position for TXT files
+      _restoreScrollPosition();
+      // Start tracking reading time
+      _startReadingTimer();
+      return content;
+    } finally {
+      if (mounted) {
+        setState(() => _isInitialLoading = false);
       }
     }
+  }
 
-    final content = await _bookService.getBookContent(widget.book);
-    setState(() => _content = content);
+  Future<void> _startInitialLoad() async {
+    try {
+      final content = await _loadContent();
+      if (!_contentCompleter.isCompleted) {
+        _contentCompleter.complete(content);
+      }
+    } catch (e, s) {
+      if (!_contentCompleter.isCompleted) {
+        _contentCompleter.completeError(e, s);
+      }
+    }
+  }
 
-    // Restore scroll position for TXT files
-    _restoreScrollPosition();
-    // Start tracking reading time
-    _startReadingTimer();
-    return content;
+  Future<void> _startInitialLoadWhenRouteVisible(
+    ModalRoute<dynamic>? route,
+  ) async {
+    while (mounted) {
+      final animation = route?.animation;
+      final isCurrentRoute = route?.isCurrent ?? true;
+      final isTransitionDone =
+          animation == null || animation.status == AnimationStatus.completed;
+
+      if (isCurrentRoute && isTransitionDone) {
+        await _startInitialLoad();
+        return;
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    }
+  }
+
+  Future<void> _ensureChapterLoaded(int index) async {
+    if (_chapters == null || index < 0 || index >= _chapters!.length) return;
+
+    final chapter = _chapters![index];
+    final hasContent =
+        chapter.content.isNotEmpty ||
+        (chapter.htmlContent?.isNotEmpty ?? false);
+    if (hasContent) return;
+
+    final loaded = await _bookService.getEpubChapterByIndex(widget.book, index);
+    if (loaded != null && mounted) {
+      _chapters![index] = loaded;
+    }
   }
 
   void _restoreScrollPosition() {
@@ -186,7 +255,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
   }
 
-  void _loadChapter(int index) {
+  Future<void> _loadChapter(int index) async {
     if (_chapters == null || index < 0 || index >= _chapters!.length) return;
 
     // Save position before changing chapter
@@ -195,13 +264,23 @@ class _ReaderScreenState extends State<ReaderScreen>
     setState(() {
       _isLoadingChapter = true;
       _currentChapterIndex = index;
+    });
+
+    // Let Flutter render the loading indicator before heavy chapter work starts.
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+
+    await _ensureChapterLoaded(index);
+
+    if (!mounted) return;
+
+    setState(() {
       _content = _chapters![index].content;
       _htmlContent = _chapters![index].htmlContent ?? _content;
+      _isLoadingChapter = false;
     });
 
     _scrollController.jumpTo(0);
-
-    setState(() => _isLoadingChapter = false);
 
     // Save position after chapter change
     _saveReadingPosition();
@@ -342,26 +421,32 @@ class _ReaderScreenState extends State<ReaderScreen>
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          if (_chapters != null && _chapters!.isNotEmpty)
+          if (!_isInitialLoading && _chapters != null && _chapters!.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.list),
               onPressed: () => _showChapterList(context),
               tooltip: 'Chapters',
             ),
-          IconButton(
-            icon: const Icon(Icons.text_decrease),
-            onPressed: _decreaseFontSize,
-          ),
-          IconButton(
-            icon: const Icon(Icons.text_increase),
-            onPressed: _increaseFontSize,
-          ),
+          if (!_isInitialLoading)
+            IconButton(
+              icon: const Icon(Icons.text_decrease),
+              onPressed: _decreaseFontSize,
+            ),
+          if (!_isInitialLoading)
+            IconButton(
+              icon: const Icon(Icons.text_increase),
+              onPressed: _increaseFontSize,
+            ),
         ],
       ),
       body: FutureBuilder<String>(
         future: _contentFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          final isLoading =
+              _isInitialLoading ||
+              snapshot.connectionState != ConnectionState.done;
+
+          if (isLoading) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -461,24 +546,29 @@ class _ReaderScreenState extends State<ReaderScreen>
           );
         },
       ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton.small(
-            heroTag: 'top',
-            onPressed: _scrollToTop,
-            child: const Icon(Icons.arrow_upward),
-          ),
-          const SizedBox(height: 8),
-          FloatingActionButton.small(
-            heroTag: 'bottom',
-            onPressed: _scrollToBottom,
-            child: const Icon(Icons.arrow_downward),
-          ),
-        ],
-      ),
+      floatingActionButton: _isInitialLoading
+          ? null
+          : Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'top',
+                  onPressed: _scrollToTop,
+                  child: const Icon(Icons.arrow_upward),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'bottom',
+                  onPressed: _scrollToBottom,
+                  child: const Icon(Icons.arrow_downward),
+                ),
+              ],
+            ),
       bottomNavigationBar:
-          _chapters != null && _chapters!.isNotEmpty && _chapters!.length > 1
+          !_isInitialLoading &&
+              _chapters != null &&
+              _chapters!.isNotEmpty &&
+              _chapters!.length > 1
           ? _buildChapterNavigation()
           : null,
     );

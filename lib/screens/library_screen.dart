@@ -36,6 +36,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _isImporting = false;
   double? _importProgress;
   String _importStatusText = '';
+  TextEditingController? _shelfNameController;
 
   @override
   void initState() {
@@ -286,13 +287,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _createShelf() async {
-    final controller = TextEditingController();
+    _shelfNameController ??= TextEditingController();
+    _shelfNameController!.clear();
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('New Shelf'),
         content: TextField(
-          controller: controller,
+          controller: _shelfNameController,
           autofocus: true,
           decoration: const InputDecoration(
             labelText: 'Shelf Name',
@@ -306,7 +308,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
+            onPressed: () => Navigator.pop(context, _shelfNameController!.text),
             child: const Text('Create'),
           ),
         ],
@@ -813,6 +815,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
         );
       },
     );
+  }
+
+  @override
+  void dispose() {
+    _shelfNameController?.dispose();
+    super.dispose();
   }
 }
 

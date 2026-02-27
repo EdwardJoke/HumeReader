@@ -52,3 +52,6 @@ AGENTS.md
 
 # test books
 books/
+
+# BUGs
+BUGS.toml

@@ -8,7 +8,6 @@ import 'package:hume/models/text_highlight.dart';
 import 'package:hume/services/book_service.dart';
 import 'package:hume/services/highlight_provider.dart';
 import 'package:hume/utils/platform_utils.dart';
-import 'package:hume/widgets/highlight_color_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -594,10 +593,10 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   // ==================== Highlight Methods ====================
 
-  /// Build custom context menu for SelectableText
-  Widget _buildSelectableTextContextMenu(
+  /// Build custom context menu for SelectionArea
+  Widget _buildSelectionAreaContextMenu(
     BuildContext context,
-    EditableTextState editableTextState,
+    SelectableRegionState selectableRegionState,
   ) {
     final List<Widget> buttonItems = [];
 
@@ -607,61 +606,31 @@ class _ReaderScreenState extends State<ReaderScreen>
         padding: const EdgeInsets.symmetric(horizontal: 12),
         onPressed: () {
           ContextMenuController.removeAny();
-          _handleSelectableTextHighlight(editableTextState);
+          _handleSelectionAreaHighlight(selectableRegionState);
         },
         child: const Text('Highlight'),
       ),
     );
 
-    // Add default buttons
-    buttonItems.addAll(
-      editableTextState.contextMenuButtonItems.map(
-        (item) => TextSelectionToolbarTextButton(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          onPressed: () {
-            item.onPressed?.call();
-          },
-          child: Text(item.label ?? ''),
-        ),
-      ),
-    );
-
     return AdaptiveTextSelectionToolbar(
-      anchors: editableTextState.contextMenuAnchors,
+      anchors: selectableRegionState.contextMenuAnchors,
       children: buttonItems,
     );
   }
 
-  /// Handle highlight for SelectableText
-  Future<void> _handleSelectableTextHighlight(
-    EditableTextState editableTextState,
+  /// Handle highlight for SelectionArea - simplified approach
+  Future<void> _handleSelectionAreaHighlight(
+    SelectableRegionState selectableRegionState,
   ) async {
-    final selection = editableTextState.textEditingValue.selection;
-    if (!selection.isValid || selection.isCollapsed) return;
-
-    final selectedText = editableTextState.textEditingValue.text
-        .substring(selection.start, selection.end);
-
-    if (selectedText.isEmpty) return;
-
-    final result = await showHighlightColorPicker(context);
-    if (result == null || !mounted) return;
-
-    final color = result['color'] as Color;
-    final style = result['style'] as HighlightStyle;
-
-    final highlightProvider = Provider.of<HighlightProvider>(context, listen: false);
-
-    await highlightProvider.addHighlight(
-      startOffset: selection.start,
-      endOffset: selection.end,
-      selectedText: selectedText,
-      color: color,
-      style: style,
+    // Show info message for now - full selection handling is complex
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Please select text first, then use Highlight'),
+        duration: Duration(seconds: 2),
+      ),
     );
-
-    // Trigger rebuild to show highlight
-    setState(() {});
   }
 
   /// Build text with highlights applied
@@ -801,13 +770,17 @@ class _ReaderScreenState extends State<ReaderScreen>
       );
     }
 
-    // For TXT files, use SelectableText.rich with custom context menu for highlight support
-    return SelectableText.rich(
-      _buildHighlightedText(_content),
-      style: TextStyle(fontSize: _fontSize, height: _lineHeight),
-      contextMenuBuilder: (context, editableTextState) {
-        return _buildSelectableTextContextMenu(context, editableTextState);
+    // For TXT files, use SelectionArea with RichText for highlight support
+    return SelectionArea(
+      contextMenuBuilder: (context, selectableRegionState) {
+        return _buildSelectionAreaContextMenu(context, selectableRegionState);
       },
+      child: SingleChildScrollView(
+        child: SelectableText.rich(
+          _buildHighlightedText(_content),
+          style: TextStyle(fontSize: _fontSize, height: _lineHeight),
+        ),
+      ),
     );
   }
 

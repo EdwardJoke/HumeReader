@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:hume/providers.dart';
 import 'package:hume/screens/home_screen.dart';
 import 'package:hume/services/book_service.dart';
@@ -54,20 +55,26 @@ class HumeApp extends StatelessWidget {
   Widget build(BuildContext context) {
     // Use ListenableBuilder instead of AnimatedBuilder for better semantics
     // Only rebuild theme-related parts, not the entire MaterialApp
-    return ListenableBuilder(
-      listenable: themeProvider,
-      builder: (context, child) {
-        return MaterialApp(
-          title: 'Hume Reader',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme(themeProvider.selectedColor),
-          darkTheme: AppTheme.darkTheme(themeProvider.selectedColor),
-          themeMode: themeProvider.isDarkMode
-              ? ThemeMode.dark
-              : ThemeMode.light,
-          home: const HomeScreen(),
-        );
-      },
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: themeProvider),
+        ChangeNotifierProvider.value(value: highlightProvider),
+      ],
+      child: ListenableBuilder(
+        listenable: themeProvider,
+        builder: (context, child) {
+          return MaterialApp(
+            title: 'Hume Reader',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.lightTheme(themeProvider.selectedColor),
+            darkTheme: AppTheme.darkTheme(themeProvider.selectedColor),
+            themeMode: themeProvider.isDarkMode
+                ? ThemeMode.dark
+                : ThemeMode.light,
+            home: const HomeScreen(),
+          );
+        },
+      ),
     );
   }
 }

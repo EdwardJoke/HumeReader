@@ -44,6 +44,10 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   static const double _lineHeight = 1.8;
 
+  bool get _canSwipeChapters {
+    return widget.book.format == 'epub' && (_chapters?.length ?? 0) > 1;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -56,8 +60,11 @@ class _ReaderScreenState extends State<ReaderScreen>
     // Load highlights for this book
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final highlightProvider = Provider.of<HighlightProvider>(context, listen: false);
-      highlightProvider.loadHighlights(widget.book.id!);
+      final highlightProvider = Provider.of<HighlightProvider>(
+        context,
+        listen: false,
+      );
+      highlightProvider.loadHighlights(widget.book.id);
       highlightProvider.setCurrentChapter(_currentChapterIndex);
     });
 
@@ -279,7 +286,10 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     // Update highlight provider for new chapter
     if (mounted) {
-      final highlightProvider = Provider.of<HighlightProvider>(context, listen: false);
+      final highlightProvider = Provider.of<HighlightProvider>(
+        context,
+        listen: false,
+      );
       highlightProvider.setCurrentChapter(index);
     }
 
@@ -534,27 +544,34 @@ class _ReaderScreenState extends State<ReaderScreen>
             );
           }
 
+          final scrollableContent = Scrollbar(
+            controller: _scrollController,
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              padding: const EdgeInsets.all(24),
+              child: _buildContent(),
+            ),
+          );
+
+          final readerContent = _canSwipeChapters
+              ? GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragEnd: (details) {
+                    if (details.primaryVelocity == null) return;
+
+                    if (details.primaryVelocity! > 0) {
+                      _previousChapter();
+                    } else if (details.primaryVelocity! < 0) {
+                      _nextChapter();
+                    }
+                  },
+                  child: scrollableContent,
+                )
+              : scrollableContent;
+
           return Stack(
             children: [
-              GestureDetector(
-                onHorizontalDragEnd: (details) {
-                  if (details.primaryVelocity == null) return;
-
-                  if (details.primaryVelocity! > 0) {
-                    _previousChapter();
-                  } else if (details.primaryVelocity! < 0) {
-                    _nextChapter();
-                  }
-                },
-                child: Scrollbar(
-                  controller: _scrollController,
-                  child: SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(24),
-                    child: _buildContent(),
-                  ),
-                ),
-              ),
+              readerContent,
               if (_isLoadingChapter)
                 const Positioned.fill(
                   child: Center(child: CircularProgressIndicator()),
@@ -624,7 +641,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   ) async {
     // Show info message for now - full selection handling is complex
     if (!mounted) return;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Please select text first, then use Highlight'),
@@ -636,7 +653,9 @@ class _ReaderScreenState extends State<ReaderScreen>
   /// Build text with highlights applied
   TextSpan _buildHighlightedText(String text) {
     final highlightProvider = context.read<HighlightProvider>();
-    final chapterHighlights = highlightProvider.getHighlightsForChapter(_currentChapterIndex);
+    final chapterHighlights = highlightProvider.getHighlightsForChapter(
+      _currentChapterIndex,
+    );
 
     if (chapterHighlights.isEmpty) {
       return TextSpan(text: text);
@@ -655,7 +674,11 @@ class _ReaderScreenState extends State<ReaderScreen>
 
       // Add non-highlighted text before this highlight
       if (highlight.startOffset > currentPosition) {
-        spans.add(TextSpan(text: text.substring(currentPosition, highlight.startOffset)));
+        spans.add(
+          TextSpan(
+            text: text.substring(currentPosition, highlight.startOffset),
+          ),
+        );
       }
 
       // Calculate highlight end (cap at text length)
@@ -775,11 +798,9 @@ class _ReaderScreenState extends State<ReaderScreen>
       contextMenuBuilder: (context, selectableRegionState) {
         return _buildSelectionAreaContextMenu(context, selectableRegionState);
       },
-      child: SingleChildScrollView(
-        child: SelectableText.rich(
-          _buildHighlightedText(_content),
-          style: TextStyle(fontSize: _fontSize, height: _lineHeight),
-        ),
+      child: SelectableText.rich(
+        _buildHighlightedText(_content),
+        style: TextStyle(fontSize: _fontSize, height: _lineHeight),
       ),
     );
   }

@@ -53,6 +53,9 @@ AGENTS.md
 # Oh-My-OpenCode
 .sisyphus/
 
+# Codex
+.codex/
+
 # test books
 books/
 

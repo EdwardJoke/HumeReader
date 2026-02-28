@@ -4,8 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:hume/models/book.dart';
 import 'package:hume/models/book_chapter.dart';
+import 'package:hume/models/text_highlight.dart';
 import 'package:hume/services/book_service.dart';
+import 'package:hume/services/highlight_provider.dart';
 import 'package:hume/utils/platform_utils.dart';
+import 'package:hume/widgets/highlight_color_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ReaderScreen extends StatefulWidget {
@@ -49,6 +53,14 @@ class _ReaderScreenState extends State<ReaderScreen>
     _currentChapterIndex = widget.book.currentChapterIndex;
     _scrollController.addListener(_onScrollChanged);
     _contentFuture = _contentCompleter.future;
+
+    // Load highlights for this book
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final highlightProvider = Provider.of<HighlightProvider>(context, listen: false);
+      highlightProvider.loadHighlights(widget.book.id!);
+      highlightProvider.setCurrentChapter(_currentChapterIndex);
+    });
 
     // Ensure loader frame is rendered and route transition is complete first.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -265,6 +277,12 @@ class _ReaderScreenState extends State<ReaderScreen>
       _isLoadingChapter = true;
       _currentChapterIndex = index;
     });
+
+    // Update highlight provider for new chapter
+    if (mounted) {
+      final highlightProvider = Provider.of<HighlightProvider>(context, listen: false);
+      highlightProvider.setCurrentChapter(index);
+    }
 
     // Let Flutter render the loading indicator before heavy chapter work starts.
     await Future<void>.delayed(Duration.zero);
@@ -574,6 +592,141 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
+  // ==================== Highlight Methods ====================
+
+  /// Build custom context menu for SelectableText
+  Widget _buildSelectableTextContextMenu(
+    BuildContext context,
+    EditableTextState editableTextState,
+  ) {
+    final List<Widget> buttonItems = [];
+
+    // Add highlight button
+    buttonItems.add(
+      TextSelectionToolbarTextButton(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        onPressed: () {
+          ContextMenuController.removeAny();
+          _handleSelectableTextHighlight(editableTextState);
+        },
+        child: const Text('Highlight'),
+      ),
+    );
+
+    // Add default buttons
+    buttonItems.addAll(
+      editableTextState.contextMenuButtonItems.map(
+        (item) => TextSelectionToolbarTextButton(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          onPressed: () {
+            item.onPressed?.call();
+          },
+          child: Text(item.label ?? ''),
+        ),
+      ),
+    );
+
+    return AdaptiveTextSelectionToolbar(
+      anchors: editableTextState.contextMenuAnchors,
+      children: buttonItems,
+    );
+  }
+
+  /// Handle highlight for SelectableText
+  Future<void> _handleSelectableTextHighlight(
+    EditableTextState editableTextState,
+  ) async {
+    final selection = editableTextState.textEditingValue.selection;
+    if (!selection.isValid || selection.isCollapsed) return;
+
+    final selectedText = editableTextState.textEditingValue.text
+        .substring(selection.start, selection.end);
+
+    if (selectedText.isEmpty) return;
+
+    final result = await showHighlightColorPicker(context);
+    if (result == null || !mounted) return;
+
+    final color = result['color'] as Color;
+    final style = result['style'] as HighlightStyle;
+
+    final highlightProvider = Provider.of<HighlightProvider>(context, listen: false);
+
+    await highlightProvider.addHighlight(
+      startOffset: selection.start,
+      endOffset: selection.end,
+      selectedText: selectedText,
+      color: color,
+      style: style,
+    );
+
+    // Trigger rebuild to show highlight
+    setState(() {});
+  }
+
+  /// Build text with highlights applied
+  TextSpan _buildHighlightedText(String text) {
+    final highlightProvider = context.read<HighlightProvider>();
+    final chapterHighlights = highlightProvider.getHighlightsForChapter(_currentChapterIndex);
+
+    if (chapterHighlights.isEmpty) {
+      return TextSpan(text: text);
+    }
+
+    // Sort highlights by start position
+    final sortedHighlights = List<TextHighlight>.from(chapterHighlights)
+      ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+
+    final List<TextSpan> spans = [];
+    int currentPosition = 0;
+
+    for (final highlight in sortedHighlights) {
+      // Skip if highlight is out of bounds
+      if (highlight.startOffset >= text.length) continue;
+
+      // Add non-highlighted text before this highlight
+      if (highlight.startOffset > currentPosition) {
+        spans.add(TextSpan(text: text.substring(currentPosition, highlight.startOffset)));
+      }
+
+      // Calculate highlight end (cap at text length)
+      final endOffset = highlight.endOffset.clamp(0, text.length);
+
+      // Add highlighted text
+      final highlightText = text.substring(
+        highlight.startOffset.clamp(0, text.length),
+        endOffset,
+      );
+
+      if (highlightText.isNotEmpty) {
+        spans.add(
+          TextSpan(
+            text: highlightText,
+            style: TextStyle(
+              backgroundColor: highlight.style == HighlightStyle.markpen
+                  ? highlight.color.withValues(alpha: 0.4)
+                  : null,
+              decoration: highlight.style == HighlightStyle.underline
+                  ? TextDecoration.underline
+                  : null,
+              decorationColor: highlight.color,
+              decorationThickness: 3,
+            ),
+          ),
+        );
+      }
+
+      currentPosition = endOffset;
+    }
+
+    // Add remaining text after last highlight
+    if (currentPosition < text.length) {
+      spans.add(TextSpan(text: text.substring(currentPosition)));
+    }
+
+    return TextSpan(children: spans);
+  }
+
   Widget _buildContent() {
     if (widget.book.format == 'epub' && _htmlContent.isNotEmpty) {
       return Html(
@@ -648,9 +801,13 @@ class _ReaderScreenState extends State<ReaderScreen>
       );
     }
 
-    return SelectableText(
-      _content,
+    // For TXT files, use SelectableText.rich with custom context menu for highlight support
+    return SelectableText.rich(
+      _buildHighlightedText(_content),
       style: TextStyle(fontSize: _fontSize, height: _lineHeight),
+      contextMenuBuilder: (context, editableTextState) {
+        return _buildSelectableTextContextMenu(context, editableTextState);
+      },
     );
   }
 

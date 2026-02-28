@@ -50,6 +50,9 @@ AGENTS.md
 # Beads AI Menory dart_tool
 .beads/
 
+# Oh-My-OpenCode
+.sisyphus/
+
 # test books
 books/
 

@@ -66,6 +66,9 @@ dependencies:
   # Window management for desktop platforms
   window_manager: ^0.4.3
 
+  # State management
+  provider: ^6.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

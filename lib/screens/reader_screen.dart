@@ -10,6 +10,7 @@ import 'package:hume/services/highlight_provider.dart';
 import 'package:hume/utils/platform_utils.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:hume/widgets/chapter_navigation_drawer.dart';
 
 class ReaderScreen extends StatefulWidget {
   final Book book;
@@ -86,6 +87,8 @@ class _ReaderScreenState extends State<ReaderScreen>
       _resumeReadingTimer();
     }
   }
+
+
 
   @override
   void dispose() {
@@ -309,8 +312,25 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     _scrollController.jumpTo(0);
 
+    // Preload adjacent chapters for faster navigation
+    _preloadAdjacentChapters(index);
+
     // Save position after chapter change
     _saveReadingPosition();
+  }
+
+  /// Preload adjacent chapters for faster swipe navigation
+  Future<void> _preloadAdjacentChapters(int currentIndex) async {
+    if (_chapters == null) return;
+    
+    // Preload next chapter
+    if (currentIndex + 1 < _chapters!.length) {
+      _ensureChapterLoaded(currentIndex + 1);
+    }
+    // Preload previous chapter
+    if (currentIndex - 1 >= 0) {
+      _ensureChapterLoaded(currentIndex - 1);
+    }
   }
 
   void _nextChapter() {
@@ -544,12 +564,14 @@ class _ReaderScreenState extends State<ReaderScreen>
             );
           }
 
-          final scrollableContent = Scrollbar(
-            controller: _scrollController,
-            child: SingleChildScrollView(
+          final scrollableContent = RepaintBoundary(
+            child: Scrollbar(
               controller: _scrollController,
-              padding: const EdgeInsets.all(24),
-              child: _buildContent(),
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(24),
+                child: RepaintBoundary(child: _buildContent()),
+              ),
             ),
           );
 
@@ -582,21 +604,23 @@ class _ReaderScreenState extends State<ReaderScreen>
       ),
       floatingActionButton: _isInitialLoading
           ? null
-          : Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                FloatingActionButton.small(
-                  heroTag: 'top',
-                  onPressed: _scrollToTop,
-                  child: const Icon(Icons.arrow_upward),
-                ),
-                const SizedBox(height: 8),
-                FloatingActionButton.small(
-                  heroTag: 'bottom',
-                  onPressed: _scrollToBottom,
-                  child: const Icon(Icons.arrow_downward),
-                ),
-              ],
+          : RepaintBoundary(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  FloatingActionButton.small(
+                    heroTag: 'top',
+                    onPressed: _scrollToTop,
+                    child: const Icon(Icons.arrow_upward),
+                  ),
+                  const SizedBox(height: 8),
+                  FloatingActionButton.small(
+                    heroTag: 'bottom',
+                    onPressed: _scrollToBottom,
+                    child: const Icon(Icons.arrow_downward),
+                  ),
+                ],
+              ),
             ),
       bottomNavigationBar:
           !_isInitialLoading &&
@@ -840,71 +864,93 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   void _showChapterList(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        minChildSize: 0.3,
-        expand: false,
-        builder: (context, scrollController) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Chapters',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: ListView.builder(
-                controller: scrollController,
-                itemCount: _chapters?.length ?? 0,
-                itemBuilder: (context, index) {
-                  final chapter = _chapters![index];
-                  final isSelected = index == _currentChapterIndex;
+    if (_chapters == null || _chapters!.isEmpty) return;
 
-                  return ListTile(
-                    leading: Text(
-                      '${index + 1}',
-                      style: TextStyle(
-                        fontWeight: isSelected ? FontWeight.bold : null,
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                      ),
+    // Use Navigator to push a new route with the drawer overlay
+    Navigator.of(context).push(
+      _ChapterDrawerRoute(
+        chapters: _chapters!,
+        currentChapterIndex: _currentChapterIndex,
+        onChapterSelected: (index) {
+          _loadChapter(index);
+          Navigator.of(context).pop();
+        },
+      ),
+    );
+  }
+}
+
+/// Custom route for slide-out chapter navigation drawer
+class _ChapterDrawerRoute extends PageRouteBuilder {
+  final List<BookChapter> chapters;
+  final int currentChapterIndex;
+  final ValueChanged<int> onChapterSelected;
+
+  _ChapterDrawerRoute({
+    required this.chapters,
+    required this.currentChapterIndex,
+    required this.onChapterSelected,
+  }) : super(
+          pageBuilder: (context, animation, secondaryAnimation) {
+            return _ChapterDrawerOverlay(
+              chapters: chapters,
+              currentChapterIndex: currentChapterIndex,
+              onChapterSelected: onChapterSelected,
+            );
+          },
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return Stack(
+              children: [
+                // Dimmed background
+                FadeTransition(
+                  opacity: animation,
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      color: Colors.black54,
                     ),
-                    title: Text(
-                      chapter.title,
-                      style: TextStyle(
-                        fontWeight: isSelected ? FontWeight.bold : null,
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                      ),
-                    ),
-                    selected: isSelected,
-                    onTap: () {
-                      _loadChapter(index);
-                      Navigator.pop(context);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+                  ),
+                ),
+                // Slide-in drawer from right
+                SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(1, 0),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  )),
+                  child: child,
+                ),
+              ],
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 300),
+          reverseTransitionDuration: const Duration(milliseconds: 250),
+        );
+}
+
+/// Overlay widget containing the chapter navigation drawer
+class _ChapterDrawerOverlay extends StatelessWidget {
+  final List<BookChapter> chapters;
+  final int currentChapterIndex;
+  final ValueChanged<int> onChapterSelected;
+
+  const _ChapterDrawerOverlay({
+    required this.chapters,
+    required this.currentChapterIndex,
+    required this.onChapterSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: ChapterNavigationDrawer(
+        chapters: chapters,
+        currentChapterIndex: currentChapterIndex,
+        onChapterSelected: onChapterSelected,
+        onClose: () => Navigator.of(context).pop(),
       ),
     );
   }

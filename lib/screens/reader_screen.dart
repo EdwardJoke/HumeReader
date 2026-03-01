@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_html/flutter_html.dart';
+import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:hume/models/book.dart';
 import 'package:hume/models/book_chapter.dart';
 import 'package:hume/models/text_highlight.dart';
@@ -46,7 +46,16 @@ class _ReaderScreenState extends State<ReaderScreen>
   static const double _lineHeight = 1.8;
 
   bool get _canSwipeChapters {
-    return widget.book.format == 'epub' && (_chapters?.length ?? 0) > 1;
+    // Only enable swipe on mobile - desktop users prefer text selection
+    return PlatformUtils.isMobile &&
+        (widget.book.format == 'epub' ||
+            ['mobi', 'azw', 'azw3'].contains(widget.book.format)) &&
+        (_chapters?.length ?? 0) > 1;
+  }
+
+  bool get _isHtmlFormat {
+    return widget.book.format == 'epub' ||
+        ['mobi', 'azw', 'azw3'].contains(widget.book.format);
   }
 
   @override
@@ -203,6 +212,29 @@ class _ReaderScreenState extends State<ReaderScreen>
         }
       }
 
+      if (['mobi', 'azw', 'azw3'].contains(widget.book.format)) {
+        _chapters = await _bookService.getMobiChapters(widget.book);
+        if (_chapters != null && _chapters!.isNotEmpty) {
+          // Clamp chapter index to valid range
+          final validIndex = _currentChapterIndex.clamp(
+            0,
+            _chapters!.length - 1,
+          );
+          await _ensureMobiChapterLoaded(validIndex);
+          setState(() {
+            _currentChapterIndex = validIndex;
+            _content = _chapters![validIndex].content;
+            _htmlContent = _chapters![validIndex].htmlContent ?? _content;
+          });
+
+          // Restore scroll position after content loads
+          _restoreScrollPosition();
+          // Start tracking reading time
+          _startReadingTimer();
+          return _content;
+        }
+      }
+
       final content = await _bookService.getBookContent(widget.book);
       setState(() => _content = content);
 
@@ -264,6 +296,21 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
   }
 
+  Future<void> _ensureMobiChapterLoaded(int index) async {
+    if (_chapters == null || index < 0 || index >= _chapters!.length) return;
+
+    final chapter = _chapters![index];
+    final hasContent =
+        chapter.content.isNotEmpty ||
+        (chapter.htmlContent?.isNotEmpty ?? false);
+    if (hasContent) return;
+
+    final loaded = await _bookService.getMobiChapterByIndex(widget.book, index);
+    if (loaded != null && mounted) {
+      _chapters![index] = loaded;
+    }
+  }
+
   void _restoreScrollPosition() {
     if (widget.book.scrollPosition > 0) {
       _isRestoringPosition = true;
@@ -300,7 +347,11 @@ class _ReaderScreenState extends State<ReaderScreen>
     await Future<void>.delayed(Duration.zero);
     if (!mounted) return;
 
-    await _ensureChapterLoaded(index);
+    if (widget.book.format == 'epub') {
+      await _ensureChapterLoaded(index);
+    } else if (['mobi', 'azw', 'azw3'].contains(widget.book.format)) {
+      await _ensureMobiChapterLoaded(index);
+    }
 
     if (!mounted) return;
 
@@ -322,14 +373,22 @@ class _ReaderScreenState extends State<ReaderScreen>
   /// Preload adjacent chapters for faster swipe navigation
   Future<void> _preloadAdjacentChapters(int currentIndex) async {
     if (_chapters == null) return;
-    
+
+    final ensureLoaded = widget.book.format == 'epub'
+        ? _ensureChapterLoaded
+        : (['mobi', 'azw', 'azw3'].contains(widget.book.format)
+            ? _ensureMobiChapterLoaded
+            : null);
+
+    if (ensureLoaded == null) return;
+
     // Preload next chapter
     if (currentIndex + 1 < _chapters!.length) {
-      _ensureChapterLoaded(currentIndex + 1);
+      ensureLoaded(currentIndex + 1);
     }
     // Preload previous chapter
     if (currentIndex - 1 >= 0) {
-      _ensureChapterLoaded(currentIndex - 1);
+      ensureLoaded(currentIndex - 1);
     }
   }
 
@@ -575,25 +634,10 @@ class _ReaderScreenState extends State<ReaderScreen>
             ),
           );
 
-          final readerContent = _canSwipeChapters
-              ? GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onHorizontalDragEnd: (details) {
-                    if (details.primaryVelocity == null) return;
-
-                    if (details.primaryVelocity! > 0) {
-                      _previousChapter();
-                    } else if (details.primaryVelocity! < 0) {
-                      _nextChapter();
-                    }
-                  },
-                  child: scrollableContent,
-                )
-              : scrollableContent;
-
           return Stack(
             children: [
-              readerContent,
+              scrollableContent,
+              if (_canSwipeChapters) ..._buildEdgeTapZones(),
               if (_isLoadingChapter)
                 const Positioned.fill(
                   child: Center(child: CircularProgressIndicator()),
@@ -743,90 +787,156 @@ class _ReaderScreenState extends State<ReaderScreen>
     return TextSpan(children: spans);
   }
 
+  List<Widget> _buildEdgeTapZones() {
+    const double tapZoneWidth = 60.0;
+    final canGoPrevious = _currentChapterIndex > 0;
+    final canGoNext = _chapters != null && _currentChapterIndex < _chapters!.length - 1;
+
+    return [
+      Positioned(
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: tapZoneWidth,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: canGoPrevious ? _previousChapter : null,
+          child: IgnorePointer(
+            ignoring: !canGoPrevious,
+            child: Container(
+              color: Colors.transparent,
+            ),
+          ),
+        ),
+      ),
+      Positioned(
+        right: 0,
+        top: 0,
+        bottom: 0,
+        width: tapZoneWidth,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: canGoNext ? _nextChapter : null,
+          child: IgnorePointer(
+            ignoring: !canGoNext,
+            child: Container(
+              color: Colors.transparent,
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
   Widget _buildContent() {
-    if (widget.book.format == 'epub' && _htmlContent.isNotEmpty) {
-      return Html(
-        data: _htmlContent,
-        onLinkTap: (url, attributes, element) {
-          _handleLinkTap(url, attributes);
-        },
-        style: {
-          'body': Style(
-            fontSize: FontSize(_fontSize),
-            lineHeight: LineHeight(_lineHeight),
-            margin: Margins.zero,
-            padding: HtmlPaddings.zero,
-          ),
-          'h1': Style(
-            fontSize: FontSize(_fontSize * 1.8),
-            fontWeight: FontWeight.bold,
-            lineHeight: LineHeight(1.3),
-            margin: Margins.only(bottom: 16, top: 24),
-          ),
-          'h2': Style(
-            fontSize: FontSize(_fontSize * 1.5),
-            fontWeight: FontWeight.bold,
-            lineHeight: LineHeight(1.3),
-            margin: Margins.only(bottom: 12, top: 20),
-          ),
-          'h3': Style(
-            fontSize: FontSize(_fontSize * 1.3),
-            fontWeight: FontWeight.bold,
-            lineHeight: LineHeight(1.4),
-            margin: Margins.only(bottom: 10, top: 16),
-          ),
-          'h4': Style(
-            fontSize: FontSize(_fontSize * 1.15),
-            fontWeight: FontWeight.bold,
-            lineHeight: LineHeight(1.4),
-            margin: Margins.only(bottom: 8, top: 12),
-          ),
-          'h5': Style(
-            fontSize: FontSize(_fontSize * 1.0),
-            fontWeight: FontWeight.bold,
-            lineHeight: LineHeight(1.5),
-            margin: Margins.only(bottom: 6, top: 10),
-          ),
-          'h6': Style(
-            fontSize: FontSize(_fontSize * 0.9),
-            fontWeight: FontWeight.bold,
-            lineHeight: LineHeight(1.5),
-            margin: Margins.only(bottom: 6, top: 10),
-          ),
-          'p': Style(
-            fontSize: FontSize(_fontSize),
-            lineHeight: LineHeight(_lineHeight),
-            margin: Margins.only(bottom: 12),
-          ),
-          'blockquote': Style(
-            fontSize: FontSize(_fontSize * 0.95),
-            fontStyle: FontStyle.italic,
-            padding: HtmlPaddings.only(left: 16),
-            margin: Margins.only(bottom: 12, top: 12),
-            border: Border(left: BorderSide(width: 4)),
-          ),
-          'li': Style(
-            fontSize: FontSize(_fontSize),
-            lineHeight: LineHeight(_lineHeight),
-          ),
-          'a': Style(
-            color: Theme.of(context).colorScheme.primary,
-            textDecoration: TextDecoration.underline,
-          ),
-        },
+    final baseStyle = TextStyle(fontSize: _fontSize, height: _lineHeight);
+
+    if (_isHtmlFormat && _htmlContent.isNotEmpty) {
+      return SelectionArea(
+        child: HtmlWidget(
+          _htmlContent,
+          onTapUrl: (url) {
+            _handleLinkTap(url, {});
+            return true;
+          },
+          textStyle: baseStyle,
+          customStylesBuilder: (element) {
+            final tagName = element.localName?.toLowerCase();
+            switch (tagName) {
+              case 'h1':
+                return {
+                  'font-size': '${(_fontSize * 1.8).toStringAsFixed(1)}px',
+                  'font-weight': 'bold',
+                  'line-height': '1.3',
+                  'margin-bottom': '16px',
+                  'margin-top': '24px',
+                };
+              case 'h2':
+                return {
+                  'font-size': '${(_fontSize * 1.5).toStringAsFixed(1)}px',
+                  'font-weight': 'bold',
+                  'line-height': '1.3',
+                  'margin-bottom': '12px',
+                  'margin-top': '20px',
+                };
+              case 'h3':
+                return {
+                  'font-size': '${(_fontSize * 1.3).toStringAsFixed(1)}px',
+                  'font-weight': 'bold',
+                  'line-height': '1.4',
+                  'margin-bottom': '10px',
+                  'margin-top': '16px',
+                };
+              case 'h4':
+                return {
+                  'font-size': '${(_fontSize * 1.15).toStringAsFixed(1)}px',
+                  'font-weight': 'bold',
+                  'line-height': '1.4',
+                  'margin-bottom': '8px',
+                  'margin-top': '12px',
+                };
+              case 'h5':
+                return {
+                  'font-size': '${(_fontSize * 1.0).toStringAsFixed(1)}px',
+                  'font-weight': 'bold',
+                  'line-height': '1.5',
+                  'margin-bottom': '6px',
+                  'margin-top': '10px',
+                };
+              case 'h6':
+                return {
+                  'font-size': '${(_fontSize * 0.9).toStringAsFixed(1)}px',
+                  'font-weight': 'bold',
+                  'line-height': '1.5',
+                  'margin-bottom': '6px',
+                  'margin-top': '10px',
+                };
+              case 'p':
+                return {
+                  'font-size': '${_fontSize.toStringAsFixed(1)}px',
+                  'line-height': '$_lineHeight',
+                  'margin-bottom': '12px',
+                };
+              case 'blockquote':
+                return {
+                  'font-size': '${(_fontSize * 0.95).toStringAsFixed(1)}px',
+                  'font-style': 'italic',
+                  'padding-left': '16px',
+                  'margin-bottom': '12px',
+                  'margin-top': '12px',
+                  'border-left': '4px solid',
+                };
+              case 'li':
+                return {
+                  'font-size': '${_fontSize.toStringAsFixed(1)}px',
+                  'line-height': '$_lineHeight',
+                };
+              case 'a':
+                return {
+                  'color': _colorToHex(Theme.of(context).colorScheme.primary),
+                  'text-decoration': 'underline',
+                };
+              default:
+                return null;
+            }
+          },
+        ),
       );
     }
 
-    // For TXT files, use SelectionArea with RichText for highlight support
     return SelectionArea(
       contextMenuBuilder: (context, selectableRegionState) {
         return _buildSelectionAreaContextMenu(context, selectableRegionState);
       },
       child: SelectableText.rich(
         _buildHighlightedText(_content),
-        style: TextStyle(fontSize: _fontSize, height: _lineHeight),
+        style: baseStyle,
       ),
     );
+  }
+
+  String _colorToHex(Color color) {
+    return '#${color.r.toInt().toRadixString(16).padLeft(2, '0')}${color.g.toInt().toRadixString(16).padLeft(2, '0')}${color.b.toInt().toRadixString(16).padLeft(2, '0')}';
   }
 
   Widget _buildChapterNavigation() {

@@ -389,39 +389,60 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return;
     }
 
-    final shelfId = await showDialog<String>(
+    final service = await _bookServiceFuture;
+    final currentShelves = await service.getShelvesContainingBook(book.id);
+    final selectedShelfIds = Set<String>.from(currentShelves.map((s) => s.id));
+
+    if (!mounted) return;
+
+    await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add to Shelf'),
-        content: SizedBox(
-          width: 200,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: _shelves.length,
-            itemBuilder: (context, index) {
-              final shelf = _shelves[index];
-              return ListTile(
-                leading: const Icon(Icons.shelves),
-                title: Text(shelf.name),
-                onTap: () => Navigator.pop(context, shelf.id),
-              );
-            },
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add to Shelves'),
+          content: SizedBox(
+            width: 280,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _shelves.length,
+              itemBuilder: (context, index) {
+                final shelf = _shelves[index];
+                final isSelected = selectedShelfIds.contains(shelf.id);
+                return CheckboxListTile(
+                  value: isSelected,
+                  title: Text(shelf.name),
+                  secondary: const Icon(Icons.shelves),
+                  onChanged: (checked) {
+                    setDialogState(() {
+                      if (checked == true) {
+                        selectedShelfIds.add(shelf.id);
+                      } else {
+                        selectedShelfIds.remove(shelf.id);
+                      }
+                    });
+                  },
+                );
+              },
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                service.setBookShelves(book.id, selectedShelfIds.toList()).then((_) {
+                  if (mounted) _loadData();
+                });
+              },
+              child: const Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
       ),
     );
-
-    if (shelfId != null) {
-      final service = await _bookServiceFuture;
-      await service.addBookToShelf(shelfId, book.id);
-      await _loadData();
-    }
   }
 
   void _openBook(Book book) {

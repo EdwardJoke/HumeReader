@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-03-01
+
+### Added
+
+- GitHub Actions release workflow for automated multi-platform builds with versioned artifacts
+- Multi-select shelf dialog with checkboxes (replaces single-select dropdown)
+- Methods to get shelves containing a book and batch update book-shelf relationships
+
+### Fixed
+
+- MOBI chapter extraction now properly parses TOC with `filepos` attributes to extract real chapter names
+- Fixed "No Material widget found" error in chapter navigation drawer search field
+- Invalidates old chapter cache entries that used "Full Text" fallback
+
+### Changed
+
+- Improved MOBI chapter extraction with fallback chain: NCX → Guide → TOC filepos → Pagebreaks → HTML headings
+- Merged consecutive duplicate chapter entries from MOBI TOC
+
 ## [0.1.10] - 2026-02-25
 
 ### Performance
@@ -142,6 +161,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reading statistics dashboard
 
 [0.1.6-beta2]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.6-beta1...v0.1.6-beta2
+[0.1.11]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.7...v0.1.9
 [0.1.7]: https://github.com/EdwardJoke/HumeReader/compare/v0.1.6-beta2...v0.1.7

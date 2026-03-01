@@ -259,9 +259,15 @@ class BookService {
 
       // Backward compatibility with legacy full-cache format.
       if (decoded is List<dynamic>) {
-        return decoded
+        final chapters = decoded
             .map((c) => BookChapter.fromMap(c as Map<String, dynamic>))
             .toList();
+        // Invalidate cache if all chapters are "Full Text" (old fallback)
+        if (chapters.length == 1 && chapters.first.title == 'Full Text') {
+          await cacheFile.delete();
+          return null;
+        }
+        return chapters;
       }
 
       if (decoded is! Map<String, dynamic>) {
@@ -270,6 +276,15 @@ class BookService {
 
       final metadata = decoded['metadata'] as List<dynamic>? ?? const [];
       if (metadata.isEmpty) return null;
+
+      // Invalidate cache if only one chapter with "Full Text" title (old fallback)
+      if (metadata.length == 1) {
+        final firstTitle = (metadata.first as Map<String, dynamic>)['title'] as String?;
+        if (firstTitle == 'Full Text') {
+          await cacheFile.delete();
+          return null;
+        }
+      }
 
       final recentContent =
           decoded['recentContent'] as List<dynamic>? ?? const [];
@@ -965,5 +980,24 @@ class BookService {
 
     final allBooks = await getBooks();
     return allBooks.where((b) => shelf.bookIds.contains(b.id)).toList();
+  }
+
+  Future<List<Shelf>> getShelvesContainingBook(String bookId) async {
+    final shelves = await getShelves();
+    return shelves.where((s) => s.bookIds.contains(bookId)).toList();
+  }
+
+  Future<void> setBookShelves(String bookId, List<String> shelfIds) async {
+    final shelves = await getShelves();
+    for (final shelf in shelves) {
+      final isInShelf = shelf.bookIds.contains(bookId);
+      final shouldBeInShelf = shelfIds.contains(shelf.id);
+
+      if (isInShelf && !shouldBeInShelf) {
+        await removeBookFromShelf(shelf.id, bookId);
+      } else if (!isInShelf && shouldBeInShelf) {
+        await addBookToShelf(shelf.id, bookId);
+      }
+    }
   }
 }

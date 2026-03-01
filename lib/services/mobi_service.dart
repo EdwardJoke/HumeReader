@@ -33,8 +33,23 @@ class MobiService {
 
 class MobiBookData {
   final MobiData _mobiData;
+  MobiRawml? _cachedRawml;
+  bool _rawmlParsed = false;
 
   MobiBookData(this._mobiData);
+
+  MobiRawml? get _rawml {
+    if (!_rawmlParsed) {
+      _rawmlParsed = true;
+      try {
+        _cachedRawml = _mobiData.parseOpt(true, true, false);
+      } catch (e) {
+        debugPrint('Warning: Failed to parse MOBI rawml: $e');
+        _cachedRawml = null;
+      }
+    }
+    return _cachedRawml;
+  }
 
   String get title {
     try {
@@ -116,8 +131,7 @@ class MobiBookData {
 
   String get htmlContent {
     try {
-      final rawml = _mobiData.parseOpt(true, true, false);
-      final data = rawml.markup?.data;
+      final data = _rawml?.markup?.data;
       if (data != null) {
         return utf8.decode(data);
       }
@@ -235,9 +249,159 @@ class MobiBookData {
   }
 
   List<BookChapter> get chapters {
+    final rawml = _rawml;
+    if (rawml != null) {
+      final ncxChapters = _extractChaptersFromNcx(rawml);
+      if (ncxChapters.isNotEmpty) {
+        return ncxChapters;
+      }
+
+      final guideChapters = _extractChaptersFromGuide(rawml);
+      if (guideChapters.isNotEmpty) {
+        return guideChapters;
+      }
+    }
+
+    return _extractChaptersFromHtml();
+  }
+
+  List<BookChapter> _extractChaptersFromNcx(MobiRawml rawml) {
+    final ncx = rawml.ncx;
+    if (ncx == null || ncx.entriesCount == 0) return [];
+
     final html = htmlContent;
     if (html.isEmpty) return [];
 
+    final chapterList = <BookChapter>[];
+    int index = 0;
+
+    for (int i = 0; i < ncx.entriesCount; i++) {
+      final entry = ncx.entries[i];
+      final title = entry.label.trim();
+
+      if (title.isEmpty) continue;
+
+      int? startPos;
+      int? endPos;
+
+      for (int j = 0; j < entry.tagsCount; j++) {
+        final tag = entry.tags[j];
+        if (tag.tagId == 6 && tag.tagValuesCount >= 1) {
+          startPos = tag.tagValues[0];
+          if (tag.tagValuesCount >= 2) {
+            endPos = startPos + tag.tagValues[1];
+          }
+        }
+      }
+
+      String chapterHtml;
+      String chapterContent;
+
+      if (startPos != null && startPos < html.length) {
+        final actualEnd = endPos ?? html.length;
+        chapterHtml = html.substring(startPos, actualEnd.clamp(startPos, html.length));
+        chapterContent = _htmlToPlainText(chapterHtml);
+      } else {
+        chapterHtml = '';
+        chapterContent = '';
+      }
+
+      if (chapterContent.trim().isNotEmpty || title.isNotEmpty) {
+        chapterList.add(BookChapter(
+          title: title,
+          content: chapterContent,
+          htmlContent: _cleanHtml(chapterHtml),
+          index: index,
+          href: startPos != null ? '#pos$startPos' : null,
+        ));
+        index++;
+      }
+    }
+
+    return chapterList;
+  }
+
+  List<BookChapter> _extractChaptersFromGuide(MobiRawml rawml) {
+    final guide = rawml.guide;
+    if (guide == null || guide.entriesCount == 0) return [];
+
+    final html = htmlContent;
+    if (html.isEmpty) return [];
+
+    final chapterList = <BookChapter>[];
+    int index = 0;
+
+    for (int i = 0; i < guide.entriesCount; i++) {
+      final entry = guide.entries[i];
+      final title = entry.label.trim();
+
+      if (title.isEmpty) continue;
+
+      int? startPos;
+      for (int j = 0; j < entry.tagsCount; j++) {
+        final tag = entry.tags[j];
+        if (tag.tagId == 6 && tag.tagValuesCount >= 1) {
+          startPos = tag.tagValues[0];
+        }
+      }
+
+      String chapterHtml;
+      String chapterContent;
+
+      if (startPos != null && startPos < html.length) {
+        final nextStart = (i + 1 < guide.entriesCount)
+            ? _getGuideEntryPosition(guide.entries[i + 1])
+            : null;
+        final endPos = nextStart ?? html.length;
+        chapterHtml = html.substring(startPos, endPos.clamp(startPos, html.length));
+        chapterContent = _htmlToPlainText(chapterHtml);
+      } else {
+        chapterHtml = '';
+        chapterContent = '';
+      }
+
+      if (chapterContent.trim().isNotEmpty || title.isNotEmpty) {
+        chapterList.add(BookChapter(
+          title: title,
+          content: chapterContent,
+          htmlContent: _cleanHtml(chapterHtml),
+          index: index,
+          href: startPos != null ? '#pos$startPos' : null,
+        ));
+        index++;
+      }
+    }
+
+    return chapterList;
+  }
+
+  int? _getGuideEntryPosition(MobiIndexEntry entry) {
+    for (int j = 0; j < entry.tagsCount; j++) {
+      final tag = entry.tags[j];
+      if (tag.tagId == 6 && tag.tagValuesCount >= 1) {
+        return tag.tagValues[0];
+      }
+    }
+    return null;
+  }
+
+  List<BookChapter> _extractChaptersFromHtml() {
+    final html = htmlContent;
+    if (html.isEmpty) return [];
+
+    // First try to extract chapters from TOC using filepos
+    final tocChapters = _extractChaptersFromTocFilepos(html);
+    if (tocChapters.isNotEmpty) {
+      return tocChapters;
+    }
+
+    // Try using pagebreak markers
+    final pagebreakChapters = _extractChaptersFromPagebreaks(html);
+    if (pagebreakChapters.isNotEmpty) {
+      return pagebreakChapters;
+    }
+
+    // Fall back to h1-h6 tags
     final chapterPattern = RegExp(
       r'<(?:h[1-6]|chapter|title)[^>]*>(.*?)</(?:h[1-6]|chapter|title)>',
       caseSensitive: false,
@@ -299,10 +463,137 @@ class MobiBookData {
     return chapterList;
   }
 
+  List<BookChapter> _extractChaptersFromTocFilepos(String html) {
+    // Look for TOC entries with filepos - format: <a filepos=0000010221>Chapter Title</a>
+    final tocPattern = RegExp(
+      r'<a\s+filepos\s*=\s*(\d+)[^>]*>([^<]+)</a>',
+      caseSensitive: false,
+    );
+
+    final tocEntries = <MapEntry<int, String>>[];
+    for (final match in tocPattern.allMatches(html)) {
+      final filepos = int.tryParse(match.group(1) ?? '');
+      final title = match.group(2)?.trim();
+      if (filepos != null && title != null && title.isNotEmpty) {
+        // Filter out non-chapter entries (like "Table of Contents", "Epigraph", etc.)
+        // Include entries that start with a number or contain "chapter"
+        if (RegExp(r'^\d+\.?\s', caseSensitive: false).hasMatch(title) ||
+            RegExp(r'chapter', caseSensitive: false).hasMatch(title) ||
+            RegExp(r'^[IVXLC]+\.', caseSensitive: false).hasMatch(title)) {
+          tocEntries.add(MapEntry(filepos, title));
+        }
+      }
+    }
+
+    if (tocEntries.isEmpty) return [];
+
+    // Sort by filepos
+    tocEntries.sort((a, b) => a.key.compareTo(b.key));
+
+    // Remove duplicates (same filepos) - keep only first occurrence
+    final uniqueEntries = <MapEntry<int, String>>[];
+    int? lastFilepos;
+    for (final entry in tocEntries) {
+      if (lastFilepos != entry.key) {
+        uniqueEntries.add(entry);
+        lastFilepos = entry.key;
+      }
+    }
+
+    // Merge consecutive entries with the same title (heading + content pairs)
+    final mergedEntries = <MapEntry<int, String>>[];
+    for (int i = 0; i < uniqueEntries.length; i++) {
+      final current = uniqueEntries[i];
+      // Check if next entry has same title - if so, skip current (it's just the heading)
+      if (i + 1 < uniqueEntries.length) {
+        final next = uniqueEntries[i + 1];
+        if (_cleanChapterTitle(current.value) == _cleanChapterTitle(next.value)) {
+          // Skip current, keep next (which has the actual content)
+          continue;
+        }
+      }
+      mergedEntries.add(current);
+    }
+
+    final chapterList = <BookChapter>[];
+    for (int i = 0; i < mergedEntries.length; i++) {
+      final startPos = mergedEntries[i].key;
+      final endPos = (i + 1 < mergedEntries.length) 
+          ? mergedEntries[i + 1].key 
+          : html.length;
+      
+      final title = _cleanChapterTitle(mergedEntries[i].value);
+      final chapterHtml = html.substring(startPos, endPos.clamp(startPos, html.length));
+      
+      chapterList.add(BookChapter(
+        title: title,
+        content: _htmlToPlainText(chapterHtml),
+        htmlContent: _cleanHtml(chapterHtml),
+        index: i,
+        href: '#pos$startPos',
+      ));
+    }
+
+    return chapterList;
+  }
+
+  List<BookChapter> _extractChaptersFromPagebreaks(String html) {
+    final pagebreakPattern = RegExp(
+      r'<mbp:pagebreak[^>]*/>',
+      caseSensitive: false,
+    );
+
+    final matches = pagebreakPattern.allMatches(html).toList();
+    if (matches.length < 2) return [];
+
+    final chapterList = <BookChapter>[];
+    
+    for (int i = 0; i < matches.length; i++) {
+      final startPos = matches[i].end;
+      final endPos = (i + 1 < matches.length) 
+          ? matches[i + 1].start 
+          : html.length;
+      
+      final chapterHtml = html.substring(startPos, endPos.clamp(startPos, html.length));
+      final content = _htmlToPlainText(chapterHtml);
+      
+      if (content.trim().isNotEmpty) {
+        // Try to extract title from first line or use generic title
+        final title = _extractTitleFromContent(content) ?? 'Chapter ${i + 1}';
+        
+        chapterList.add(BookChapter(
+          title: title,
+          content: content,
+          htmlContent: _cleanHtml(chapterHtml),
+          index: i,
+        ));
+      }
+    }
+
+    return chapterList;
+  }
+
+  String _cleanChapterTitle(String title) {
+    return title
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String? _extractTitleFromContent(String content) {
+    final lines = content.split('\n').where((l) => l.trim().isNotEmpty).toList();
+    if (lines.isEmpty) return null;
+    
+    final firstLine = lines.first.trim();
+    // If first line is short, use it as title
+    if (firstLine.length < 100) {
+      return firstLine;
+    }
+    return null;
+  }
+
   Uint8List? get coverImage {
     try {
-      final rawml = _mobiData.parseOpt(true, true, false);
-      var resource = rawml.resources;
+      var resource = _rawml?.resources;
       while (resource != null) {
         final fileType = resource.fileType;
         if ((fileType == MobiFileType.jpg ||

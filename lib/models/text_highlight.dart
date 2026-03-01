@@ -63,7 +63,7 @@ class TextHighlight {
       'startOffset': startOffset,
       'endOffset': endOffset,
       'selectedText': selectedText,
-      'color': color.value,
+      'color': color.toARGB32(),
       'style': style.index,
       'createdAt': createdAt.toIso8601String(),
     };

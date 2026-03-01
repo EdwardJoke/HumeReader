@@ -1,0 +1,349 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  FLUTTER_BRANCH: 'beta'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+  android:
+    name: Android Release
+    runs-on: ubuntu-22.04
+    needs: prepare
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+
+      - name: Cache Flutter SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/flutter
+            ~/.pub-cache
+            build/
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
+            ${{ runner.os }}-flutter-
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build APK (Release)
+        run: flutter build apk --release
+
+      - name: Build AAB (Release)
+        run: flutter build appbundle --release
+
+      - name: Rename APK with version
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             build/app/outputs/flutter-apk/hume-${{ needs.prepare.outputs.version }}-android.apk
+
+      - name: Rename AAB with version
+        run: |
+          mv build/app/outputs/bundle/release/app-release.aab \
+             build/app/outputs/bundle/release/hume-${{ needs.prepare.outputs.version }}-android.aab
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-release
+          path: build/app/outputs/flutter-apk/hume-${{ needs.prepare.outputs.version }}-android.apk
+          retention-days: 30
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aab-release
+          path: build/app/outputs/bundle/release/hume-${{ needs.prepare.outputs.version }}-android.aab
+          retention-days: 30
+
+  ios:
+    name: iOS Release
+    runs-on: macos-14
+    needs: prepare
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+
+      - name: Cache Flutter SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/flutter
+            ~/.pub-cache
+            build/
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
+            ${{ runner.os }}-flutter-
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build iOS for simulator
+        run: flutter build ios --simulator --no-codesign
+
+      - name: Create iOS archive
+        run: |
+          cd build/ios/iphonesimulator
+          zip -r ../../../hume-${{ needs.prepare.outputs.version }}-ios-simulator.zip Runner.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release
+          path: hume-${{ needs.prepare.outputs.version }}-ios-simulator.zip
+          retention-days: 30
+
+  macos:
+    name: macOS Release
+    runs-on: macos-14
+    needs: prepare
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+
+      - name: Cache Flutter SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/flutter
+            ~/.pub-cache
+            build/
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
+            ${{ runner.os }}-flutter-
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build macOS
+        run: flutter build macos --release
+
+      - name: Create macOS archive
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -r ../../../../../hume-${{ needs.prepare.outputs.version }}-macos.zip Runner.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: hume-${{ needs.prepare.outputs.version }}-macos.zip
+          retention-days: 30
+
+  linux:
+    name: Linux Release
+    runs-on: ubuntu-22.04
+    needs: prepare
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Setup Flutter
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+
+      - name: Cache Flutter SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/flutter
+            ~/.pub-cache
+            build/
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
+            ${{ runner.os }}-flutter-
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Linux
+        run: flutter build linux --release
+
+      - name: Create Linux archive
+        run: |
+          cd build/linux/x64/release
+          zip -r ../../../../hume-${{ needs.prepare.outputs.version }}-linux-x64.zip bundle
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: hume-${{ needs.prepare.outputs.version }}-linux-x64.zip
+          retention-days: 30
+
+  windows:
+    name: Windows Release
+    runs-on: windows-latest
+    needs: prepare
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        shell: pwsh
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 $env:USERPROFILE\flutter
+          echo "$env:USERPROFILE\flutter\bin" >> $env:GITHUB_PATH
+          $env:Path = "$env:USERPROFILE\flutter\bin;$env:Path"
+          flutter doctor -v
+
+      - name: Cache Flutter SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\flutter
+            ~\.pub-cache
+            build\
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
+            ${{ runner.os }}-flutter-
+
+      - name: Get dependencies
+        shell: pwsh
+        run: |
+          $env:Path = "$env:USERPROFILE\flutter\bin;$env:Path"
+          flutter pub get
+
+      - name: Build Windows
+        shell: pwsh
+        run: |
+          $env:Path = "$env:USERPROFILE\flutter\bin;$env:Path"
+          flutter build windows --release
+
+      - name: Create Windows archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath hume-${{ needs.prepare.outputs.version }}-windows-x64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: hume-${{ needs.prepare.outputs.version }}-windows-x64.zip
+          retention-days: 30
+
+  web:
+    name: Web Release
+    runs-on: ubuntu-22.04
+    needs: prepare
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        run: |
+          git clone https://github.com/flutter/flutter.git -b ${{ env.FLUTTER_BRANCH }} --depth 1 ~/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+
+      - name: Cache Flutter SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/flutter
+            ~/.pub-cache
+            build/
+          key: ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-${{ env.FLUTTER_BRANCH }}-
+            ${{ runner.os }}-flutter-
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Web
+        run: flutter build web --release
+
+      - name: Create Web archive
+        run: |
+          cd build
+          zip -r ../hume-${{ needs.prepare.outputs.version }}-web.zip web
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-release
+          path: hume-${{ needs.prepare.outputs.version }}-web.zip
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-22.04
+    needs: [prepare, android, ios, macos, linux, windows, web]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Hume ${{ needs.prepare.outputs.version }}
+          tag_name: v${{ needs.prepare.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(needs.prepare.outputs.version, '-') }}
+          files: |
+            artifacts/android-apk-release/*
+            artifacts/android-aab-release/*
+            artifacts/ios-release/*
+            artifacts/macos-release/*
+            artifacts/linux-release/*
+            artifacts/windows-release/*
+            artifacts/web-release/*

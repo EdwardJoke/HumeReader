@@ -102,40 +102,34 @@ class SettingsScreen extends StatelessWidget {
               _buildSectionHeader(context, 'Update'),
               const SizedBox(height: 8),
               Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Update Channel',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<UpdateChannel>(
-                        initialValue: themeProvider.updateChannel,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: UpdateChannel.stable,
-                            child: Text('Stable'),
-                          ),
-                          DropdownMenuItem(
-                            value: UpdateChannel.beta,
-                            child: Text('Beta'),
-                          ),
-                        ],
-                        onChanged: (channel) {
-                          if (channel != null) {
-                            themeProvider.selectUpdateChannel(channel);
-                          }
-                        },
-                      ),
-                    ],
-                  ),
+                child: Column(
+                  children: [
+                    RadioListTile<UpdateChannel>(
+                      secondary: const Icon(Icons.check_circle_outline),
+                      title: const Text('Stable'),
+                      subtitle: const Text('Recommended for most users'),
+                      value: UpdateChannel.stable,
+                      groupValue: themeProvider.updateChannel,
+                      onChanged: (channel) {
+                        if (channel != null) {
+                          themeProvider.selectUpdateChannel(channel);
+                        }
+                      },
+                    ),
+                    const Divider(height: 1),
+                    RadioListTile<UpdateChannel>(
+                      secondary: const Icon(Icons.science_outlined),
+                      title: const Text('Beta'),
+                      subtitle: const Text('Get early access to new features'),
+                      value: UpdateChannel.beta,
+                      groupValue: themeProvider.updateChannel,
+                      onChanged: (channel) {
+                        if (channel != null) {
+                          themeProvider.selectUpdateChannel(channel);
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),
